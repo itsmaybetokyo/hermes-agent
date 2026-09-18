@@ -1516,6 +1516,14 @@ def _run_conversation_turn(
             messages=s.messages, effective_task_id=s.effective_task_id,
             should_review_memory=s._should_review_memory,
         )
+    # Opt-in runtime: api_mode == opencode_cli hands the whole turn to a per-turn
+    # `opencode run` subprocess (see agent/opencode_runtime.py).
+    if agent.api_mode == "opencode_cli":
+        return agent._run_opencode_cli_turn(
+            user_message=s.user_message, original_user_message=s.original_user_message,
+            messages=s.messages, effective_task_id=s.effective_task_id,
+            should_review_memory=s._should_review_memory,
+        )
 
     while (s.api_call_count < agent.max_iterations and agent.iteration_budget.remaining > 0) or agent._budget_grace_call:
         if _run_phase(begin_iteration, agent, s).action == "break":

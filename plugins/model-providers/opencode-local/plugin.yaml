@@ -1,0 +1,5 @@
+name: opencode-local-provider
+kind: model-provider
+version: 1.0.0
+description: OpenCode CLI local per-turn run (opencode_cli)
+author: Nous Research

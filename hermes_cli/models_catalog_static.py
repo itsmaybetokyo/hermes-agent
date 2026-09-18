@@ -249,6 +249,11 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
         "anthropic/claude-opus-4.6", "anthropic/claude-sonnet-4.6", "openai/gpt-5.4",
         "google/gemini-3-pro-preview", "google/gemini-3-flash-preview",
     ],
+    # Local per-turn `opencode run`: the CLI's opencode-provider models (big-pickle is the
+    # free-tier reasoning model we emulated through the zen API). Single canonical id:
+    # the runtime normalizes "big-pickle" -> "opencode/big-pickle" for the subprocess, and
+    # a single entry keeps the picker from offering the same model twice.
+    "opencode-local": ["big-pickle"],
     "alibaba": list(_ALIBABA_MODELS),
     "alibaba-cn": list(_ALIBABA_MODELS),
     "alibaba-coding-plan": list(_ALIBABA_CODING_PLAN_MODELS),

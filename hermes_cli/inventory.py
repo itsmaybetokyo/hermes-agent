@@ -506,12 +506,21 @@ def _filter_explicit_provider_rows(rows: list[dict], ctx: ConfigContext) -> list
 
 
 def _external_process_signed_in(slug: str) -> bool:
-    """True when an external-process provider has verified CLI credentials."""
+    """True when an external-process provider is configured and its CLI resolves.
+
+    ``auth_verified`` carries POSITIVE on-disk/token evidence and is only ever set for
+    copilot-acp; other external-process CLIs (e.g. opencode-local) hold no key/token by
+    design — the spawned subprocess owns auth, so graceful ``configured``/``logged_in``
+    (executable resolves) is the signal, matching _overlay_has_creds in model_switch.
+    """
     try:
         from hermes_cli.auth import PROVIDER_REGISTRY, get_external_process_provider_status
         pconfig = PROVIDER_REGISTRY.get(slug)
-        return bool(pconfig and pconfig.auth_type == "external_process"
-                    and get_external_process_provider_status(slug).get("auth_verified"))
+        if not (pconfig and pconfig.auth_type == "external_process"):
+            return False
+        status = get_external_process_provider_status(slug) or {}
+        return bool(status.get("logged_in") or status.get("configured")
+                    or status.get("auth_verified"))
     except Exception:
         return False
 

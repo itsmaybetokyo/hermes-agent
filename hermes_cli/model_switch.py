@@ -1547,7 +1547,9 @@ def _nous_api_mode(provider: str, model: str, api_key: str) -> str:
 _PROVIDER_API_MODE_OVERRIDES: dict[str, Any] = {
     **dict.fromkeys(("copilot", "github-copilot"), _copilot_api_mode),
     **dict.fromkeys(("opencode-zen", "opencode-go", "opencode"), _opencode_api_mode),
-    **dict.fromkeys(("nous", "nous-portal", "nousresearch"), _nous_api_mode)}
+    **dict.fromkeys(("nous", "nous-portal", "nousresearch"), _nous_api_mode),
+    # Local per-turn `opencode run`: no REST wire at all — the mode is fixed.
+    "opencode-local": lambda provider, model, api_key: "opencode_cli"}
 
 
 def _build_switch_result(st: _Switch) -> ModelSwitchResult:

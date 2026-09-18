@@ -16,6 +16,7 @@ import os
 import re
 import sys
 import threading
+import tempfile
 import urllib.parse
 import urllib.request
 import urllib.error
@@ -1415,6 +1416,34 @@ def _bedrock_catalog(normalized: str, force_refresh: bool) -> Optional[list[str]
         return None
 
 
+def _opencode_local_catalog(normalized: str, force_refresh: bool) -> Optional[list[str]]:
+    """Models the installed opencode CLI is willing to run, surfaced via ``opencode models``.
+
+    Executes under the SAME hermetic XDG root the per-turn opencode runtime uses
+    (``agent/opencode_runtime``), so the picker lists exactly what a turn could launch
+    without the user's real opencode credentials — not every model.dev ID. Returns None
+    on any failure so the caller falls back to the curated static list."""
+    try:
+        from agent.opencode_runtime import _opencode_env, _resolve_opencode_executable
+    except Exception:
+        return None
+    try:
+        exe = _resolve_opencode_executable()
+        if not exe:
+            return None
+        import subprocess
+
+        root = Path(tempfile.gettempdir()) / "hermes-opencode-catalog"
+        proc = subprocess.run(
+            [exe, "models"], capture_output=True, text=True, timeout=60, env=_opencode_env(root))
+        if proc.returncode != 0:
+            return None
+        model_ids = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+        return model_ids or None
+    except Exception:
+        return None
+
+
 # Per-provider catalog sources tried before the generic profile fetch. A fetcher returning None
 # falls through to the profile/curated path; a list is returned as-is (even empty).
 _PROVIDER_CATALOG_FETCHERS: dict[str, Any] = {
@@ -1434,7 +1463,8 @@ _PROVIDER_CATALOG_FETCHERS: dict[str, Any] = {
     "openai": _openai_catalog,
     "openai-api": _openai_catalog,
     "custom": _custom_catalog,
-    "bedrock": _bedrock_catalog}
+    "bedrock": _bedrock_catalog,
+    "opencode-local": _opencode_local_catalog}
 
 
 # ``-free`` slugs the relay still LISTS but no longer serves: the Go-only twin (``ox-alpha-free``)

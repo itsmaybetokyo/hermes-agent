@@ -58,6 +58,8 @@ HERMES_OVERLAYS: Dict[str, HermesOverlay] = {
     "vercel": HermesOverlay(is_aggregator=True),
     "opencode": HermesOverlay(is_aggregator=True, base_url_env_var="OPENCODE_ZEN_BASE_URL"),
     "opencode-go": HermesOverlay(is_aggregator=True, base_url_env_var="OPENCODE_GO_BASE_URL"),
+    "opencode-local": HermesOverlay(transport="opencode_cli", auth_type="external_process",
+                                    base_url_override="opencode://local", base_url_env_var="OPENCODE_LOCAL_BASE_URL"),
     "kilo": HermesOverlay(is_aggregator=True, base_url_env_var="KILOCODE_BASE_URL"),
     "huggingface": HermesOverlay(is_aggregator=True, base_url_env_var="HF_BASE_URL"),
     "novita": HermesOverlay(is_aggregator=True, base_url_env_var="NOVITA_BASE_URL"),
@@ -144,7 +146,7 @@ _LABEL_OVERRIDES: Dict[str, str] = {
     "upstage": "Upstage Solar", "actual": "Actual Computer", "tencent-tokenhub": "Tencent TokenHub",
     "nebius-token-factory": "Nebius Token Factory", "tencent-tokenplan": "Tencent TokenPlan", "lmstudio": "LM Studio",
     "local": "Local endpoint", "bedrock": "AWS Bedrock", "vertex": "Google Vertex AI", "ollama-cloud": "Ollama Cloud",
-    "xai-oauth": "xAI Grok OAuth (SuperGrok / Premium+)",
+    "xai-oauth": "xAI Grok OAuth (SuperGrok / Premium+)", "opencode-local": "OpenCode CLI (local run)",
 }
 
 
@@ -153,6 +155,7 @@ _LABEL_OVERRIDES: Dict[str, str] = {
 TRANSPORT_TO_API_MODE: Dict[str, str] = {
     "openai_chat": "chat_completions", "anthropic_messages": "anthropic_messages",
     "codex_responses": "codex_responses", "bedrock_converse": "bedrock_converse",
+    "opencode_cli": "opencode_cli",
 }
 
 

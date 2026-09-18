@@ -366,7 +366,7 @@ class CompressionSettings(SimpleNamespace):
 
 _EXPLICIT_API_MODES = {
     "chat_completions", "codex_responses", "anthropic_messages", "bedrock_converse",
-    "codex_app_server",
+    "codex_app_server", "opencode_cli",
 }
 
 
@@ -401,6 +401,11 @@ def _resolve_api_mode(agent, api_mode, provider_name, base_url):
         # AIAgent construction without a resolved runtime.
         from hermes_cli.providers import nous_api_mode
         agent.api_mode = nous_api_mode(agent.model)
+    elif agent.provider == "opencode-local":
+        # Local opencode CLI run per turn: each turn is a fresh `opencode run` subprocess
+        # (api_mode opencode_cli). Provider-name-driven, not URL-driven: the provider only
+        # exists inside Hermes as the local-CLI overlay.
+        agent.api_mode = "opencode_cli"
     else:
         # Host-mandated wire check — LAST, so the provider-slug rewrites above always win.
         # Covers api.meta.ai → codex_responses (prompt caching: 0% on chat vs 93-99%).

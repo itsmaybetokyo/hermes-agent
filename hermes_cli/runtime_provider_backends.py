@@ -246,6 +246,18 @@ def _is_external_process_provider(provider: str) -> bool:
 def _resolve_external_process_runtime(provider: str, requested_provider: str) -> Dict[str, Any]:
     rp = _rp()
     creds = rp.resolve_external_process_provider_credentials(provider)
-    return rp._runtime(provider, "chat_completions", creds.get("base_url", "").rstrip("/"), creds.get("api_key", ""),
+    # The registry keys on external_process auth, but the wire mode is per-provider: the ACP
+    # profile uses chat_completions routing while opencode-local opts into a per-turn
+    # `opencode run` subprocess (opencode_cli). Default stays chat_completions so untouched
+    # profiles (copilot-acp) keep their historic behavior.
+    api_mode = "chat_completions"
+    try:
+        from providers import get_provider_profile
+        _profile = get_provider_profile(provider)
+        if _profile is not None and getattr(_profile, "api_mode", ""):
+            api_mode = _profile.api_mode
+    except Exception:
+        pass
+    return rp._runtime(provider, api_mode, creds.get("base_url", "").rstrip("/"), creds.get("api_key", ""),
                        command=creds.get("command", ""), args=list(creds.get("args") or []),
                        source=creds.get("source", "process"), requested_provider=requested_provider)
