@@ -370,6 +370,11 @@ except Exception:
 
 _PROVIDER_LABELS = {p.slug: p.label for p in CANONICAL_PROVIDERS}
 _PROVIDER_LABELS["custom"] = "Custom endpoint"  # special case: not a named provider
+# Overlay providers (providers.HERMES_OVERLAYS) are addressable providers but not canonical slugs.
+# Without their label here, _KNOWN_PROVIDER_NAMES misses them and the main-slot save path
+# (_normalize_main_model_assignment) treats an explicit provider like opencode-local as an unknown
+# vendor prefix and remaps it to OpenRouter — hard-rejecting opencode-local models on save.
+_PROVIDER_LABELS["opencode-local"] = "OpenCode CLI (local run)"
 
 
 # ---------------------------------------------------------------------------

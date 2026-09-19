@@ -280,12 +280,16 @@ _STATIC_FAMILY_PREFIXES = {
     "openai-codex": ("gpt-", "codex-", "o1", "o3", "o4"),
     "xai-oauth": ("grok-",),
 }
-_STATIC_LABELS = {"openai-codex": "OpenAI Codex", "xai-oauth": "xAI Grok OAuth (SuperGrok / Premium+)"}
+_STATIC_LABELS = {
+    "openai-codex": "OpenAI Codex",
+    "xai-oauth": "xAI Grok OAuth (SuperGrok / Premium+)",
+    "opencode-local": "OpenCode CLI (local run)",
+}
 
 
 def _validate_static_catalog(req: _Request) -> Optional[dict[str, Any]]:
-    """openai-codex / xai-oauth: no /v1/models probing — validate against the curated catalog.
-    Returns None (fall through) when the catalog is empty."""
+    """openai-codex / xai-oauth / opencode-local: no /v1/models probing — validate against the curated
+    catalog (``opencode models`` for the local CLI). Returns None (fall through) when the catalog is empty."""
     catalog = _static_catalog(req.normalized)
     if req.normalized == "openai-codex":
         from agent.model_metadata import CODEX_CONTEXT_VARIANT_SUFFIX, is_codex_context_variant
@@ -516,7 +520,7 @@ _LADDER: tuple[tuple[Callable[[_Request], bool], Callable[[_Request], Optional[d
     (_for("lmstudio"), _validate_lmstudio),
     (lambda req: True, _validate_ollama_native),
     (_is_custom, _validate_custom),
-    (_for("openai-codex", "xai-oauth"), _validate_static_catalog),
+    (_for("openai-codex", "xai-oauth", "opencode-local"), _validate_static_catalog),
     (_for("minimax", "minimax-cn"), _validate_minimax),
     (_for("anthropic"), _validate_anthropic),
     (lambda req: req.api_mode == "anthropic_messages", _validate_anthropic_messages),
