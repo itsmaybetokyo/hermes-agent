@@ -132,6 +132,24 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(ort._extract_error(err2), "nested")
         self.assertIsNone(ort._extract_error({"type": "text"}))
 
+    def test_extract_error_top_level_shape(self) -> None:
+        err = {"type": "error", "timestamp": 1, "sessionID": "s",
+               "error": {"name": "APIError",
+                         "data": {"message": "Internal server error", "statusCode": 500}}}
+        self.assertEqual(ort._extract_error(err), "APIError: Internal server error (status 500)")
+
+    def test_tool_preview_prefers_title_then_known_keys(self) -> None:
+        self.assertEqual(ort._opencode_tool_preview("glob", {"title": "  Files  "}), "Files")
+        self.assertEqual(
+            ort._opencode_tool_preview("read", {"input": {"filePath": "a/b.py"}}), "a/b.py")
+        self.assertIsNone(ort._opencode_tool_preview("x", {}))
+
+    def test_tool_result_error_status(self) -> None:
+        text, is_error = ort._opencode_tool_result({"status": "completed", "output": "ok"})
+        self.assertEqual((text, is_error), ("ok", False))
+        text, is_error = ort._opencode_tool_result({"status": "failed", "output": "nope"})
+        self.assertEqual((text, is_error), ("nope", True))
+
 
 def _patched_cost():
     """Hermetic cost accounting: opencode-local has no pricing entry, so force the
@@ -245,6 +263,76 @@ class TestRunTurn(unittest.TestCase):
         self.assertNotIn("OPENCODE_CONFIG_CONTENT", env)
         self.assertNotIn("OPENCODE_CONFIG_PATH", env)
         self.assertEqual(env.get("OPENCODE_DISABLE_AUTOUPDATER"), "1")
+
+
+class TestEventBridge(unittest.TestCase):
+    """tool_use/reasoning/top-level-error events reach the Hermes display channels."""
+
+    def _run(self, agent, lines, returncode=0):
+        proc = _FakeProc(lines, returncode=returncode)
+
+        def _fake(cmd, **kwargs):
+            return proc
+
+        with patch.object(ort.subprocess, "Popen", side_effect=_fake), _patched_cost():
+            return ort.run_opencode_cli_turn(
+                agent, user_message="x", original_user_message="x",
+                messages=[{"role": "user", "content": "x"}], effective_task_id="t-1",
+            )
+
+    def test_tool_use_fires_progress_callbacks_and_counts(self) -> None:
+        agent = build_agent_stub(model="big-pickle")
+        progress, started, completed = [], [], []
+        agent.tool_progress_callback = lambda *a, **k: progress.append((a, k))
+        agent.tool_start_callback = lambda *a: started.append(a)
+        agent.tool_complete_callback = lambda *a: completed.append(a)
+        result = self._run(agent, [
+            json.dumps({"type": "tool_use", "part": {
+                "type": "tool", "tool": "glob", "callID": "call_1",
+                "state": {"status": "completed", "input": {"pattern": "AGENTS.md"},
+                          "output": "agent/AGENTS.md",
+                          "time": {"start": 1000, "end": 1500}}}}),
+            json.dumps({"type": "text", "part": {"type": "text", "text": "DONE"}}),
+            json.dumps({"type": "done"}),
+        ])
+        self.assertTrue(result["completed"])
+        kinds = [call[0][0] for call in progress]
+        self.assertEqual(kinds, ["tool.started", "tool.completed"])
+        self.assertEqual(progress[0][0][1:], ("glob", "AGENTS.md", {"pattern": "AGENTS.md"}))
+        self.assertFalse(progress[1][1]["is_error"])
+        self.assertAlmostEqual(progress[1][1]["duration"], 0.5)
+        self.assertEqual(progress[1][1]["result"], "agent/AGENTS.md")
+        self.assertEqual(started, [("call_1", "glob", {"pattern": "AGENTS.md"})])
+        self.assertEqual(completed, [("call_1", "glob", {"pattern": "AGENTS.md"}, "agent/AGENTS.md")])
+        # Turn accounting sees the CLI-owned tool call (was hardcoded 0).
+        self.assertEqual(agent._iters_since_skill, 1)
+
+    def test_reasoning_streams_and_persists_without_polluting_answer(self) -> None:
+        agent = build_agent_stub(model="big-pickle")
+        deltas = []
+        agent._fire_reasoning_delta = deltas.append
+        result = self._run(agent, [
+            json.dumps({"type": "reasoning", "part": {"type": "reasoning", "text": "Let me think"}}),
+            json.dumps({"type": "text", "part": {"type": "text", "text": "DONE"}}),
+            json.dumps({"type": "done"}),
+        ])
+        self.assertTrue(result["completed"])
+        self.assertEqual(deltas, ["Let me think"])
+        self.assertEqual(result["final_response"], "DONE")
+        self.assertEqual(result["messages"][-1]["content"], "DONE")
+        self.assertEqual(result["messages"][-1]["reasoning"], "Let me think")
+
+    def test_top_level_error_shape_fails_the_turn(self) -> None:
+        agent = build_agent_stub(model="big-pickle")
+        result = self._run(agent, [
+            json.dumps({"type": "error", "timestamp": 1, "sessionID": "s",
+                        "error": {"name": "APIError",
+                                  "data": {"message": "Internal server error",
+                                           "statusCode": 500}}}),
+        ])
+        self.assertFalse(result["completed"])
+        self.assertTrue(result["partial"])
+        self.assertIn("Internal server error", str(result["error"]))
 
 
 if __name__ == "__main__":

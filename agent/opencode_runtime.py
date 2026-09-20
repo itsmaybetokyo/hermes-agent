@@ -3,8 +3,11 @@
 The ``opencode_cli`` API mode hands each Hermes turn to the LOCAL ``opencode`` CLI:
 one ``opencode run --model <model> --format=json`` subprocess per turn (stateless,
 no persistent session), the Hermes transcript passed via ``stdin``, and the CLI's
-NDJSON ``type:text`` / ``type:step_finish`` events bridged into Hermes' stream deltas
-and token accounting. Big-pickle and friends talk OpenCode's *free tier*, so with this
+NDJSON events bridged into Hermes: ``type:text`` into stream deltas, ``type:tool_use``
+into the tool-progress callbacks, ``type:reasoning`` into the reasoning channel plus
+the persisted message, ``type:step_finish`` into token accounting, and ``type:error``
+(in either the part-shaped or the top-level failure shape) into the turn error.
+Big-pickle and friends talk OpenCode's *free tier*, so with this
 mode big-pickle runs through opencode-ai itself (a real ``opencode run`` subprocess
 instead of a forged HTTP bearer against the zen endpoint, which the free tier rejects).
 
@@ -35,6 +38,7 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
 from agent.codex_runtime import (
+    _call_guarded,
     _consume_user_interrupt,
     _finish_codex_turn,
     _persist_projected_messages,
@@ -175,6 +179,29 @@ def _opencode_tokens_to_usage(tokens: Any) -> Optional[Dict[str, int]]:
 
 
 def _extract_error(event: Dict[str, Any]) -> Optional[str]:
+    # Top-level failure shape: {"type":"error","error":{"name":...,"data":{"message":...}}}.
+    # The provider surfaces transport/rate-limit failures this way (stderr stays empty),
+    # so missing it degrades to a bare "exited with code 1" with no actionable detail.
+    err = event.get("error")
+    if isinstance(err, dict):
+        data = err.get("data")
+        message: Optional[str] = None
+        status: Optional[int] = None
+        if isinstance(data, dict):
+            raw_message = data.get("message")
+            if isinstance(raw_message, str) and raw_message.strip():
+                message = raw_message.strip()
+            if isinstance(data.get("statusCode"), int):
+                status = data["statusCode"]
+        if message is None:
+            raw_message = err.get("message")
+            if isinstance(raw_message, str) and raw_message.strip():
+                message = raw_message.strip()
+        if message:
+            name = err.get("name")
+            label = f"{name}: " if isinstance(name, str) and name else ""
+            suffix = f" (status {status})" if status is not None else ""
+            return f"{label}{message}{suffix}"
     part = event.get("part")
     if not isinstance(part, dict):
         return None
@@ -188,6 +215,98 @@ def _extract_error(event: Dict[str, Any]) -> Optional[str]:
             if isinstance(message, str) and message.strip():
                 return message.strip()
     return None
+
+
+_PREVIEW_INPUT_KEYS = ("pattern", "filePath", "path", "command", "url", "query")
+
+_TERMINAL_TOOL_STATUSES = {"completed", "success", "failed", "error"}
+
+
+def _opencode_tool_preview(tool_name: str, state: Dict[str, Any]) -> Optional[str]:
+    """Short preview for the tool.started bubble; mirrors _codex_item_to_preview."""
+    if not isinstance(state, dict):
+        return None
+    title = state.get("title")
+    if isinstance(title, str) and title.strip():
+        return title.strip()[:120]
+    inputs = state.get("input")
+    if not isinstance(inputs, dict):
+        return None
+    for key in _PREVIEW_INPUT_KEYS:
+        value = inputs.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()[:120]
+    for value in inputs.values():
+        if isinstance(value, str) and value.strip():
+            return value.strip()[:120]
+    return None
+
+
+def _opencode_tool_result(state: Dict[str, Any]) -> tuple[str, bool]:
+    """(result_text, is_error) for a completed tool part — display-facing, capped."""
+    if not isinstance(state, dict):
+        return "", False
+    status = str(state.get("status") or "")
+    is_error = status not in {"completed", "success"} or "error" in state
+    output = state.get("output", "")
+    if isinstance(output, dict):
+        try:
+            text = json.dumps(output, ensure_ascii=False)
+        except (TypeError, ValueError):
+            text = str(output)
+    else:
+        text = output if isinstance(output, str) else ""
+    return text[:4000], is_error
+
+
+def _bridge_opencode_tool(agent, part: Dict[str, Any], started: Dict[str, Any],
+                          finished: set[str]) -> int:
+    """Project one ``tool_use`` part into the display callbacks (codex-bridge shapes).
+
+    Fires tool.started once per callID and tool.completed on a terminal status;
+    returns 1 when a tool completed (0 otherwise) for turn accounting. Every display
+    callback is guarded: a buggy hook must never tear down the turn.
+    """
+    name = str(part.get("tool") or "unknown")
+    call_id = str(part.get("callID") or "")
+    state = part.get("state") if isinstance(part.get("state"), dict) else {}
+    status = str(state.get("status") or "")
+    if call_id and call_id not in started and call_id not in finished:
+        args = state.get("input") if isinstance(state.get("input"), dict) else {}
+        started[call_id] = (name, args, time.monotonic())
+        preview = _opencode_tool_preview(name, state)
+        _call_guarded(getattr(agent, "tool_progress_callback", None),
+                      "tool_progress_callback raised on tool.started for %s", name,
+                      args=("tool.started", name, preview, args))
+        _call_guarded(getattr(agent, "tool_start_callback", None),
+                      "tool_start_callback raised for %s", name,
+                      args=(call_id, name, args))
+    if status not in _TERMINAL_TOOL_STATUSES and "error" not in state:
+        return 0
+    if call_id:
+        if call_id in finished:
+            return 0
+        finished.add(call_id)
+    prior = started.pop(call_id, None) if call_id else None
+    result, is_error = _opencode_tool_result(state)
+    duration: Optional[float] = None
+    timing = state.get("time") if isinstance(state.get("time"), dict) else {}
+    start_ms, end_ms = timing.get("start"), timing.get("end")
+    if (isinstance(start_ms, (int, float)) and isinstance(end_ms, (int, float))
+            and end_ms >= start_ms):
+        duration = (end_ms - start_ms) / 1000.0
+    elif prior is not None:
+        duration = time.monotonic() - prior[2]
+    _call_guarded(getattr(agent, "tool_progress_callback", None),
+                  "tool_progress_callback raised on tool.completed for %s", name,
+                  args=("tool.completed", name, None, None),
+                  kwargs={"duration": duration, "is_error": is_error, "result": result})
+    args = prior[1] if prior is not None else (
+        state.get("input") if isinstance(state.get("input"), dict) else {})
+    _call_guarded(getattr(agent, "tool_complete_callback", None),
+                  "tool_complete_callback raised for %s", name,
+                  args=(call_id or name, name, args, result))
+    return 1
 
 
 def run_opencode_cli_turn(agent, *, user_message: str, original_user_message: Any,
@@ -212,6 +331,10 @@ def run_opencode_cli_turn(agent, *, user_message: str, original_user_message: An
     timeout_seconds = int(getattr(agent, "opencode_task_timeout", 0) or 1800)
     proc = None
     final_text_parts: List[str] = []
+    reasoning_parts: List[str] = []
+    tool_started: Dict[str, Any] = {}
+    tool_finished: set[str] = set()
+    tool_completed = 0
     usage_last: Optional[Dict[str, int]] = None
     error: Optional[str] = None
     interrupted = False
@@ -281,6 +404,18 @@ def run_opencode_cli_turn(agent, *, user_message: str, original_user_message: An
                 part = event.get("part")
                 if isinstance(part, dict) and isinstance(part.get("tokens"), dict):
                     usage_last = _opencode_tokens_to_usage(part["tokens"]) or usage_last
+            elif event_type == "tool_use":
+                part = event.get("part")
+                if isinstance(part, dict):
+                    tool_completed += _bridge_opencode_tool(agent, part, tool_started, tool_finished)
+            elif event_type == "reasoning":
+                part = event.get("part")
+                if isinstance(part, dict):
+                    text = part.get("text")
+                    if isinstance(text, str) and text:
+                        reasoning_parts.append(text)
+                        _call_guarded(getattr(agent, "_fire_reasoning_delta", None),
+                                      "_fire_reasoning_delta raised", args=(text,))
             elif event_type == "error":
                 message = _extract_error(event)
                 if message:
@@ -321,12 +456,18 @@ def run_opencode_cli_turn(agent, *, user_message: str, original_user_message: An
         logger.warning("opencode_cli turn error: %s", error)
 
     # Assemble the assistant message and persist (agent_persisted=True skips the gateway rewrite).
+    # Reasoning rides the canonical assistant_msg["reasoning"] store, rendered wherever the
+    # surfaces show thinking; tool activity was already streamed live and stays out of history.
     assistant_message: Dict[str, Any] = {"role": "assistant", "content": final_text or ""}
+    reasoning_text = "\n".join(p for p in reasoning_parts if p).strip()
+    if reasoning_text:
+        assistant_message["reasoning"] = reasoning_text
     turn = SimpleNamespace(
         projected_messages=[assistant_message],
         submitted_user_text=None,  # assistant row — never stripped by the turn-start-dedup
         final_text=final_text, error=(error or None), interrupted=interrupted,
-        tool_iterations=0, token_usage_last=usage_last, compacted=False, model_context_window=None,
+        tool_iterations=tool_completed, token_usage_last=usage_last, compacted=False,
+        model_context_window=None,
     )
     _persist_projected_messages(agent, turn, messages)
     usage_result = _finish_codex_turn(
