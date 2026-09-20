@@ -1816,6 +1816,11 @@ def create_openai_client(agent, client_kwargs: dict, *, reason: str, shared: boo
         client = _gemini_native_client(agent, client_kwargs, httpx_verify, reason=reason, shared=shared)
         if client is not None:
             return client
+    # External-process launch kwargs (copilot-acp, opencode-local, ...) belong to
+    # ProviderProfile.create_client above; a profile that returns None (opencode-local: the
+    # runtime spawns the CLI itself) must not leak them into the HTTP SDK constructor.
+    client_kwargs.pop("command", None)
+    client_kwargs.pop("args", None)
     # TCP keepalives so dead provider connections are detected (~60s) instead of hanging in
     # CLOSE-WAIT. Injected into the local copy only, so each client gets its own httpx.Client;
     # pinned by tests/agent/test_create_openai_client_reuse.py and
