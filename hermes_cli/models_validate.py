@@ -322,6 +322,17 @@ def static_model_provider_conflict(model_name: str, provider: Optional[str], *, 
     }
 
 
+def _opencode_local_match_forms(normalized: str, lookup: str, catalog: list[str]):
+    """opencode-local ids exist in two spellings (``big-pickle`` vs the CLI's own
+    ``opencode/big-pickle``). Compare canonical short ids on both sides so old
+    prefixed rows and new picker rows recognize each other; other providers pass
+    through untouched."""
+    if normalized != "opencode-local":
+        return lookup, catalog
+    from hermes_cli.models import _opencode_cli_catalog_id
+    return _opencode_cli_catalog_id(lookup), [_opencode_cli_catalog_id(m) for m in catalog]
+
+
 def _validate_static_catalog(req: _Request) -> Optional[dict[str, Any]]:
     """openai-codex / xai-oauth / opencode-local: no /v1/models probing — validate against the curated
     catalog (``opencode models`` for the local CLI). Returns None (fall through) when the catalog is empty."""
@@ -344,7 +355,8 @@ def _validate_static_catalog(req: _Request) -> Optional[dict[str, Any]]:
             )
     if not catalog:
         return None
-    match = _match_in_catalog(req.lookup, catalog)
+    lookup, catalog = _opencode_local_match_forms(req.normalized, req.lookup, catalog)
+    match = _match_in_catalog(lookup, catalog)
     verdict = match.verdict(req)
     if verdict is not None:
         return verdict

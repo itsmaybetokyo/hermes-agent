@@ -83,3 +83,31 @@ def test_main_assignment_keeps_opencode_local_provider():
         assert result.success is True
         assert result.target_provider == "opencode-local"
         assert result.new_model == model
+
+
+def test_live_catalog_strips_cli_provider_prefix():
+    # ``opencode models`` qualifies its own models (``opencode/big-pickle``) while the
+    # static catalog, the config default and validation use the short id — the live
+    # rows must canonicalize so the picker does not offer the same model twice.
+    import subprocess as _subprocess
+
+    from hermes_cli.models import _opencode_local_catalog
+
+    class _Proc:
+        returncode = 0
+        stdout = "opencode/big-pickle\nopencode/jev-1.13-free\ngoogle/x\nbig-pickle\n"
+
+    with patch("agent.opencode_runtime._resolve_opencode_executable", return_value="opencode"), \
+         patch.object(_subprocess, "run", return_value=_Proc()):
+        assert _opencode_local_catalog("opencode-local", False) == [
+            "big-pickle", "jev-1.13-free", "google/x"]
+
+
+def test_prefixed_and_short_ids_recognize_each_other():
+    # Old sessions/picker rows carry the CLI-qualified id, new ones the short id;
+    # validation must accept both spellings against either catalog spelling.
+    short_catalog = ["big-pickle", "jev-1.13-free"]
+    with patch("hermes_cli.models_validate._static_catalog", return_value=short_catalog):
+        assert validate_requested_model("opencode/big-pickle", "opencode-local")["recognized"] is True
+    with patch("hermes_cli.models_validate._static_catalog", return_value=_CATALOG):
+        assert validate_requested_model("big-pickle", "opencode-local")["recognized"] is True

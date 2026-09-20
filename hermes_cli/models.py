@@ -1470,6 +1470,21 @@ def _bedrock_catalog(normalized: str, force_refresh: bool) -> Optional[list[str]
         return None
 
 
+def _opencode_cli_catalog_id(raw: str) -> str:
+    """Canonical picker id for one ``opencode models`` row.
+
+    The CLI qualifies its own provider's models (``opencode/big-pickle``) while the
+    static catalog, the config default and the spawn path all use the short id
+    (``big-pickle``; ``_model_cli_id`` re-qualifies at spawn). Stripping the CLI's
+    own prefix here keeps the live rows deduped against those sources instead of
+    showing the same model twice in the picker. Other vendors' rows pass through.
+    """
+    text = (raw or "").strip()
+    if text.lower().startswith("opencode/"):
+        return text[len("opencode/"):]
+    return text
+
+
 def _opencode_local_catalog(normalized: str, force_refresh: bool) -> Optional[list[str]]:
     """Models the installed opencode CLI is willing to run, surfaced via ``opencode models``.
 
@@ -1492,7 +1507,11 @@ def _opencode_local_catalog(normalized: str, force_refresh: bool) -> Optional[li
             [exe, "models"], capture_output=True, text=True, timeout=60, env=_opencode_env(root))
         if proc.returncode != 0:
             return None
-        model_ids = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+        model_ids = []
+        for line in proc.stdout.splitlines():
+            canonical = _opencode_cli_catalog_id(line)
+            if canonical and canonical not in model_ids:
+                model_ids.append(canonical)
         return model_ids or None
     except Exception:
         return None
