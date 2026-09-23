@@ -21,12 +21,27 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+          token: ${{ secrets.SYNC_UPSTREAM_PAT || github.token }}
 
       - name: Merge upstream main into fork
+        env:
+          SYNC_UPSTREAM_PAT: ${{ secrets.SYNC_UPSTREAM_PAT }}
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git remote add upstream https://github.com/NousResearch/hermes-agent.git
           git fetch upstream main
-          git merge --no-edit upstream/main
+          before=$(git rev-parse HEAD)
+          git merge --no-edit -X ours upstream/main
+          after=$(git rev-parse HEAD)
+          # GITHUB_TOKEN cannot push commits touching .github/workflows/* (no `workflows` scope;
+          # it is not grantable via `permissions:`). Unless a PAT is configured, keep the fork's
+          # own workflow files in the sync commit so the push is never rejected.
+          if [ -z "$SYNC_UPSTREAM_PAT" ] && [ "$before" != "$after" ] \
+              && ! git diff --quiet "$before" "$after" -- .github/workflows; then
+            git rm -r -q .github/workflows
+            git checkout "$before" -- .github/workflows
+            git commit --amend --no-edit -q
+          fi
           git push origin main
