@@ -33,23 +33,11 @@ jobs:
           git remote add upstream https://github.com/NousResearch/hermes-agent.git
           git fetch upstream main
           before=$(git rev-parse HEAD)
-          # `-X ours` auto-resolves text conflicts but NOT modify/delete. Reconcile the remainder:
-          # workflow paths adopt upstream when a PAT lets us push them, else stay with the fork;
-          # any other unmerged path keeps the fork's side (deletion − consistent with -X ours).
+          # `-X ours` auto-resolves text conflicts but NOT modify/delete, and `git rm` refuses
+          # those paths. Stage the worktree to clear every unmerged entry; the PAT posture
+          # below then decides whether the workflow files actually ship in the push.
           if ! git merge --no-edit -X ours upstream/main; then
-            wf=$(git diff --name-only --diff-filter=U -- .github/workflows)
-            if [ -n "$wf" ]; then
-              if [ -n "$SYNC_UPSTREAM_PAT" ]; then
-                git checkout upstream/main -- $wf
-              else
-                git rm -f -q -- $wf
-              fi
-              git add $wf
-            fi
-            other=$(git diff --name-only --diff-filter=U)
-            if [ -n "$other" ]; then
-              git rm -f -q -- $other
-            fi
+            git add -A -- .
             git commit --no-edit -q
           fi
           after=$(git rev-parse HEAD)
