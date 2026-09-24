@@ -333,6 +333,7 @@ export const ru = defineLocale({
       'composer.focus': 'Сфокусировать композер',
       'composer.modelPicker': 'Открыть выбор модели',
       'composer.voice': 'Начать / остановить голосовой диалог',
+      'composer.dictate': 'Начать / остановить диктовку',
       'view.toggleSidebar': 'Показать / скрыть панель сеансов',
       'view.toggleRightSidebar': 'Показать / скрыть браузер файлов',
       'view.toggleReview': 'Показать / скрыть панель ревью',
@@ -680,6 +681,10 @@ export const ru = defineLocale({
       backdropDesc: 'Блёклый силуэт позади диалога.',
       userBubbleTitle: 'Пузырь сообщения',
       userBubbleDesc: 'Насколько прозрачны ваши сообщения. 0 — сплошная заливка, 100 — остаётся только контур.',
+      textDirectionTitle: 'Направление текста',
+      textDirectionDesc:
+        'Как сообщения чата и поле ввода выбирают направление. «Авто» ориентируется на первую букву каждого абзаца; выберите направление, если смешанный текст выстраивается неправильно. Код всегда остаётся слева направо.',
+      textDirection: { auto: 'Авто', rtl: 'Справа налево', ltr: 'Слева направо' },
       introSplashTitle: 'Экран приветствия',
       introSplashDesc: 'Логотип и подсказка, показываемые на пустом чате.',
       reactionsTitle: 'Реакции на сообщения',
@@ -816,7 +821,6 @@ export const ru = defineLocale({
         maxSnapshots: 'Лимит чекпоинтов'
       },
       voice: {
-        recordKey: 'Горячая клавиша голосового ввода',
         maxRecordingSeconds: 'Макс. длительность записи',
         autoTts: 'Зачитывать ответы вслух'
       },
@@ -1084,7 +1088,10 @@ export const ru = defineLocale({
       attachmentSizeDesc:
         'Насколько большой локальный файл приложение будет загружать для превью и вложений, в МБ. По умолчанию 16. Для удалённых неграфических вложений действует отдельный лимит 256 МБ. Слишком большое значение загружает весь файл в память и может подвесить или уронить приложение.',
       attachmentSizeUnit: 'МБ',
-      attachmentSizeLabel: 'Макс. размер превью / загрузки изображений в мегабайтах'
+      attachmentSizeLabel: 'Макс. размер превью / загрузки изображений в мегабайтах',
+      voiceShortcutHintTitle: 'Горячая клавиша записи голоса',
+      voiceShortcutHintDesc:
+        'Настройте горячую клавишу записи голоса в разделе «Настройки → Горячие клавиши» («Начать / остановить диктовку»). Параметр voice.record_key действует только в CLI и TUI.'
     },
     hudModifier: {
       title: 'Вызов HUD коротким нажатием',
@@ -1439,6 +1446,9 @@ export const ru = defineLocale({
       moaSetDefault: 'Сделать основным',
       moaNewPresetPlaceholder: 'новый пресет',
       moaAddPreset: 'Добавить пресет',
+      customModel: 'Своя модель…',
+      customModelPlaceholder: 'ID модели',
+      chooseFromList: 'Выбрать из списка',
       moaDefault: 'По умолчанию:',
       moaReferenceToggle: (enabled, index) => `${enabled ? 'Отключить' : 'Включить'} референс ${index}`,
       moaReferenceTitle: index => `Референс ${index}`,
@@ -2554,6 +2564,38 @@ export const ru = defineLocale({
     missingBody: 'Этот артефакт больше нет в локальном реестре.'
   },
   sidebar: {
+    profileRail: 'Панель профилей',
+    filter: {
+      grouping: 'Группировка',
+      ordering: 'Сортировка',
+      show: 'Показывать',
+      inboxStyle: 'Стиль «Входящие»',
+      status: 'Статус',
+      pullRequest: 'Запрос на слияние',
+      profile: 'Профиль',
+      project: 'Проект',
+      archived: 'Архивные',
+      expandAll: 'Развернуть все',
+      collapseAll: 'Свернуть все',
+      updated: 'Обновление',
+      created: 'Создано',
+      tokens: 'Токены',
+      cost: 'Стоимость',
+      manual: 'Вручную',
+      preview: 'Превью',
+      pr: 'PR',
+      open: 'Открыт',
+      draft: 'Черновик',
+      merged: 'Слит',
+      closed: 'Закрыт',
+      needsInput: 'Нужен ввод',
+      working: 'В работе',
+      unread: 'Непрочитанные',
+      idle: 'Бездействие',
+      filters: 'Фильтры',
+      resetToDefaults: 'Сбросить настройки',
+      noPR: 'Без PR'
+    },
     gatewayGroups: {
       grouping: 'Шлюз и профиль',
       rename: 'Переименовать группу',
@@ -3393,14 +3435,19 @@ export const ru = defineLocale({
     free: 'Free',
     freeTier: 'Бесплатный тариф',
     priceTitle: 'Цена вход / выход за миллион токенов',
-    wasPrice: 'было'
+    wasPrice: 'было',
+    customModel: 'Своя модель',
+    addCustomModelAction: 'Добавить свою модель…',
+    customModelPlaceholder: 'Введите id модели, например openai/gpt-5'
   },
 
   modelVisibility: {
     title: 'Модели',
     search: 'Поиск моделей',
     noAuthenticatedProviders: 'Нет провайдеров с аутентификацией.',
-    addProvider: 'Добавить провайдера…'
+    addProvider: 'Добавить провайдера…',
+    addCustomModel: 'Добавить свою модель',
+    removeCustomModel: 'Удалить свою модель'
   },
   shell: {
     windowControls: 'Управление окном',
