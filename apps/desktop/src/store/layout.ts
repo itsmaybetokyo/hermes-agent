@@ -240,11 +240,7 @@ export const $sidebarMessagingOpenIds = persistentAtom(
 )
 // Nav rows the user hid via the row's hover action. Persisted so a relaunch
 // keeps the rail exactly as they left it; restored from the "…" overflow row.
-export const $sidebarHiddenNavIds = persistentAtom(
-  SIDEBAR_HIDDEN_NAV_STORAGE_KEY,
-  [] as string[],
-  Codecs.stringArray
-)
+export const $sidebarHiddenNavIds = persistentAtom(SIDEBAR_HIDDEN_NAV_STORAGE_KEY, [] as string[], Codecs.stringArray)
 // The Project-grouping flag, per scope like the grouping atoms below it: one
 // global bool here meant picking Project inside a workspace also flipped the
 // all-profiles view into the project tree (and leaving it there wiped the
