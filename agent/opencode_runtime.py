@@ -325,7 +325,7 @@ def run_opencode_cli_turn(agent, *, user_message: str, original_user_message: An
         logger.warning("opencode_cli: could not prepare XDG root %s: %s", xdg_root, exc)
 
     prompt = _transcript_to_prompt(messages)
-    command = [executable, "run", "--model", model_id, "--format=json"]
+    command = [executable, "run", "--model", model_id, "--format=json", "--thinking"]
     logger.info("opencode_cli turn: model=%s xdg=%s", model_id, xdg_root)
 
     timeout_seconds = int(getattr(agent, "opencode_task_timeout", 0) or 1800)
