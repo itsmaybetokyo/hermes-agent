@@ -2414,6 +2414,8 @@ export const ja = defineLocale({
       artifacts: 'アーティファクト',
       cron: 'スケジュール済みジョブ'
     },
+    hideNavItem: label => `サイドバーから「${label}」を非表示`,
+    showHidden: '非表示の項目',
     searchAria: 'セッションを検索',
     searchPlaceholder: 'セッションを検索…',
     clearSearch: '検索をクリア',

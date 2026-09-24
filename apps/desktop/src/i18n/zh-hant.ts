@@ -2638,6 +2638,8 @@ export const zhHant = defineLocale({
       artifacts: '成品',
       cron: '排程工作'
     },
+    hideNavItem: label => `在側邊欄中隱藏「${label}」`,
+    showHidden: '顯示隱藏項',
     searchAria: '搜尋工作階段',
     searchPlaceholder: '搜尋工作階段…',
     clearSearch: '清除搜尋',

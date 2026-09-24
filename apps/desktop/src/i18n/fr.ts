@@ -3936,6 +3936,8 @@ export const fr = defineLocale({
       artifacts: 'Artefacts',
       cron: 'Tâches planifiées'
     },
+    hideNavItem: label => `Masquer ${label} de la barre latérale`,
+    showHidden: 'Afficher les masqués',
     searchAria: 'Rechercher des sessions',
     searchPlaceholder: 'Rechercher des sessions…',
     clearSearch: 'Effacer la recherche',

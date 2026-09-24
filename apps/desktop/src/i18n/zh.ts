@@ -3274,6 +3274,8 @@ export const zh = defineLocale({
       artifacts: '产物',
       cron: '定时任务'
     },
+    hideNavItem: label => `在侧边栏中隐藏「${label}」`,
+    showHidden: '显示隐藏项',
     searchAria: '搜索会话',
     searchPlaceholder: '搜索会话…',
     clearSearch: '清除搜索',

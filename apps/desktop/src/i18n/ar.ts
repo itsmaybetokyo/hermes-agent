@@ -2049,6 +2049,8 @@ export const ar = defineLocale({
       cron: 'المهام المجدولة',
       agents: 'الوكلاء'
     },
+    hideNavItem: label => `إخفاء «${label}» من الشريط الجانبي`,
+    showHidden: 'إظهار المخفي',
     searchAria: 'البحث في الجلسات',
     searchPlaceholder: 'البحث في الجلسات...',
     clearSearch: 'مسح البحث',

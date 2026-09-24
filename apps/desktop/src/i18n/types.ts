@@ -2901,6 +2901,8 @@ export interface Translations {
     }
     profileRail: string
     nav: Record<string, string>
+    hideNavItem: (label: string) => string
+    showHidden: string
     searchAria: string
     searchPlaceholder: string
     clearSearch: string

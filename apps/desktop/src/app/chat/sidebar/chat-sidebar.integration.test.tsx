@@ -8,7 +8,7 @@ import { $layoutTree, noteActiveTreeGroup } from '@/components/pane-shell/tree/s
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { registry } from '@/contrib/registry'
 import { $connectionsRegistry } from '@/store/connection-registry-state'
-import { $sidebarMessagingOpenIds, setSidebarAgentsGrouped, setSidebarGrouping } from '@/store/layout'
+import { $sidebarHiddenNavIds, $sidebarMessagingOpenIds, setSidebarAgentsGrouped, setSidebarGrouping } from '@/store/layout'
 import { $activeGatewayProfile, $profiles, setShowAllProfiles } from '@/store/profile'
 import { $projectScope, $projectTree, ALL_PROJECTS } from '@/store/projects'
 import {
@@ -376,5 +376,47 @@ describe('ChatSidebar messaging owners', () => {
     expect(telegramGroups()).toHaveLength(0)
     expect(screen.queryByText('work-1')).toBeNull()
     expect(within(row('default-1')).queryByRole('img', { name: /^Profile:/ })).toBeNull()
+  })
+})
+
+describe('ChatSidebar nav hide / restore', () => {
+  beforeEach(() => {
+    $sidebarHiddenNavIds.set([])
+  })
+
+  afterEach(() => {
+    cleanup()
+    $sidebarHiddenNavIds.set([])
+  })
+
+  it('hides a built-in row from the sidebar and restores it from the overflow menu', async () => {
+    renderSidebar('/messaging', 'messaging')
+    expect(screen.getByRole('button', { name: 'Messaging' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Show hidden' })).toBeNull()
+
+    // Contributed rows are owned by their plugin — no hide action for them.
+    expect(screen.queryByRole('button', { name: 'Hide Kanban from the sidebar' })).toBeNull()
+    // Capabilities hosts the Plugins tab (the only path to a plugin's own
+    // off-switch) — never hideable, mirroring NEVER_HIDDEN in sidebar-nav.ts.
+    expect(screen.queryByRole('button', { name: 'Hide Capabilities from the sidebar' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide Messaging from the sidebar' }))
+    expect(screen.queryByRole('button', { name: 'Messaging' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Show hidden' })).toBeTruthy()
+    expect($sidebarHiddenNavIds.get()).toEqual(['messaging'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show hidden' }))
+    // Radix's dropdown trigger opens on pointerdown (not on the synthetic
+    // 'click' fireEvent alone would dispatch), so fire the full mouse sequence
+    // a real click produces.
+    const showHidden = screen.getByRole('button', { name: 'Show hidden' })
+    fireEvent.pointerDown(showHidden, { button: 0, pointerType: 'mouse' })
+    fireEvent.pointerUp(showHidden, { button: 0, pointerType: 'mouse' })
+    fireEvent.click(showHidden)
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Messaging' }))
+
+    expect(screen.getByRole('button', { name: 'Messaging' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Show hidden' })).toBeNull()
+    expect($sidebarHiddenNavIds.get()).toEqual([])
   })
 })

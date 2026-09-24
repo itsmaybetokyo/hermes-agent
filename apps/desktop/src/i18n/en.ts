@@ -3459,6 +3459,8 @@ export const en: Translations = {
       artifacts: 'Artifacts',
       cron: 'Scheduled jobs'
     },
+    hideNavItem: label => `Hide ${label} from the sidebar`,
+    showHidden: 'Show hidden',
     searchAria: 'Search sessions',
     searchPlaceholder: 'Search sessions…',
     clearSearch: 'Clear search',

@@ -9,6 +9,7 @@ import { PlatformAvatar } from '@/app/messaging/platform-icon'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { GlyphSpinner } from '@/components/ui/glyph-spinner'
 import { KbdGroup } from '@/components/ui/kbd'
 import { SearchField } from '@/components/ui/search-field'
@@ -18,6 +19,7 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem
 } from '@/components/ui/sidebar'
@@ -42,6 +44,7 @@ import {
   $sidebarCronOpen,
   $sidebarFiltersActive,
   $sidebarGrouping,
+  $sidebarHiddenNavIds,
   $sidebarMessagingOpenIds,
   $sidebarOrdering,
   $sidebarPinsOpen,
@@ -71,6 +74,7 @@ import {
   setSidebarWorkspaceOrderIds,
   setSidebarWorkspaceParentOrderIds,
   SIDEBAR_SESSIONS_PAGE_SIZE,
+  toggleSidebarHiddenNav,
   toggleSidebarMessagingOpen,
   unpinSession
 } from '@/store/layout'
@@ -246,6 +250,11 @@ const SIDEBAR_NAV: SidebarNavItem[] = [
     tier: 'advanced'
   }
 ]
+
+// Rows the user may hide via the row's hover action. Capabilities is excluded:
+// it hosts the Plugins tab — the only path to a plugin's own off-switch — and
+// must never be hidden, mirroring NEVER_HIDDEN in store/sidebar-nav.ts.
+const HIDEABLE_NAV_IDS = new Set(SIDEBAR_NAV.map(item => item.id).filter(id => id !== 'capabilities'))
 
 // Two modes via the `compact` height variant (styles.css):
 //   tall    → each section is shrink-0, capped, its own scroller; Sessions is flex-1.
@@ -445,6 +454,13 @@ export function ChatSidebar({
     () => applySidebarNavPrefs([...SIDEBAR_NAV, ...contributedNav].filter(shownInMode(interfaceMode)), navPrefs),
     [contributedNav, interfaceMode, navPrefs]
   )
+
+  // Rows the user hid via the row's hover action. Stale ids in storage (a row
+  // dropped by a mode/prefs change, or a plugin row that can't be hidden) are
+  // filtered out so the overflow only ever offers rows whose restore renders.
+  const hiddenNavIds = useStore($sidebarHiddenNavIds).filter(id => HIDEABLE_NAV_IDS.has(id))
+  const visibleNav = navItems.filter(item => !hiddenNavIds.includes(item.id))
+  const hiddenNavItems = navItems.filter(item => hiddenNavIds.includes(item.id))
 
   const panesFlipped = useStore($panesFlipped)
   const grouping = useStore($sidebarGrouping)
@@ -1573,7 +1589,7 @@ export function ChatSidebar({
         <SidebarGroup className="shrink-0 p-0 pb-2 pt-[calc(var(--titlebar-height)+0.375rem)]">
           <SidebarGroupContent>
             <SidebarMenu className="gap-px">
-              {navItems.map(item => {
+              {visibleNav.map(item => {
                 const isInteractive = Boolean(item.action) || Boolean(item.route)
 
                 const active =
@@ -1585,6 +1601,7 @@ export function ChatSidebar({
                   (currentView === 'extension' && Boolean(item.route) && pathname === item.route)
 
                 const isNewSession = item.id === 'new-session'
+                const label = s.nav[item.id] ?? item.label
 
                 const button = (
                   <SidebarMenuButton
@@ -1662,13 +1679,22 @@ export function ChatSidebar({
                     </span>
                     {isNewSession && (
                       <KbdGroup
-                        className={cn('ml-auto opacity-55', newSessionKbdFlash && 'opacity-100!')}
+                        className={cn(
+                          // The hide action overlays the row's right edge on
+                          // hover, so the kbd chip fades out to keep the row
+                          // readable (and stays visible during the flash).
+                          'ml-auto opacity-55 transition-opacity group-hover/menu-item:opacity-0 group-focus-within/menu-item:opacity-0',
+                          newSessionKbdFlash && 'opacity-100!'
+                        )}
                         keys={newSessionKbd}
                         size="sm"
                       />
                     )}
                   </SidebarMenuButton>
                 )
+
+                const isHideable = HIDEABLE_NAV_IDS.has(item.id)
+                const hideLabel = s.hideNavItem(label)
 
                 // New session + route-backed pages can open in a split —
                 // right-click for the directional "Open in split" submenu.
@@ -1677,7 +1703,7 @@ export function ChatSidebar({
                     {isNewSession || item.route ? (
                       <ContextMenu>
                         <ContextMenuTrigger asChild>{button}</ContextMenuTrigger>
-                        <ContextMenuContent aria-label={s.nav[item.id] ?? item.label}>
+                        <ContextMenuContent aria-label={label}>
                           <SplitSubmenu
                             kit={CONTEXT_SPLIT_KIT}
                             label={s.row.openInSplit}
@@ -1694,9 +1720,53 @@ export function ChatSidebar({
                     ) : (
                       button
                     )}
+                    {/* Only built-in rows can be hidden; contributed rows are
+                        owned by their plugin. Restored from the "…" row. */}
+                    {isHideable && (
+                      <Tip align="center" label={hideLabel} side="right">
+                        <SidebarMenuAction
+                          aria-label={hideLabel}
+                          // `top-1!` pins the 20px action square inside the
+                          // 28px nav row regardless of the default size-lg
+                          // placement (top-2.5 would overhang). Tint it below
+                          // the row's own text so it reads as chrome until
+                          // hover, then inherit the row's hover tokens.
+                          className="top-1! text-(--ui-text-tertiary) transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground"
+                          onClick={() => toggleSidebarHiddenNav(item.id)}
+                          showOnHover
+                          type="button"
+                        >
+                          <Codicon name="eye-closed" />
+                        </SidebarMenuAction>
+                      </Tip>
+                    )}
                   </SidebarMenuItem>
                 )
               })}
+              {hiddenNavItems.length > 0 && (
+                <SidebarMenuItem>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <SidebarMenuButton
+                        aria-label={s.showHidden}
+                        className="flex h-7 w-full justify-start gap-2 rounded-md border border-transparent px-2 text-left text-[0.8125rem] font-medium text-(--ui-text-secondary) transition-colors duration-100 ease-out [-webkit-app-region:no-drag] hover:bg-(--ui-control-hover-background) hover:text-foreground hover:transition-none"
+                        type="button"
+                      >
+                        <Codicon name="ellipsis" />
+                        <span className="min-w-0 truncate">{s.showHidden}</span>
+                      </SidebarMenuButton>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      {hiddenNavItems.map(item => (
+                        <DropdownMenuItem key={item.id} onSelect={() => toggleSidebarHiddenNav(item.id)}>
+                          <item.icon className="size-3.5" />
+                          {s.nav[item.id] ?? item.label}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

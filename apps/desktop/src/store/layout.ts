@@ -39,6 +39,7 @@ const SIDEBAR_PINNED_STORAGE_KEY = 'hermes.desktop.pinnedSessions'
 const SIDEBAR_AGENTS_GROUPED_STORAGE_KEY = 'hermes.desktop.agentsGroupedByWorkspace'
 const SIDEBAR_CRON_OPEN_STORAGE_KEY = 'hermes.desktop.sidebarCronOpen'
 const SIDEBAR_MESSAGING_OPEN_STORAGE_KEY = 'hermes.desktop.sidebarMessagingOpen'
+const SIDEBAR_HIDDEN_NAV_STORAGE_KEY = 'hermes.desktop.sidebarHiddenNavIds'
 const SIDEBAR_SESSION_ORDER_STORAGE_KEY = 'hermes.desktop.sessionOrder'
 const SIDEBAR_SESSION_ORDER_MANUAL_STORAGE_KEY = 'hermes.desktop.sessionOrder.manual'
 const SIDEBAR_GROUPING_STORAGE_KEY = 'hermes.desktop.sidebarGrouping'
@@ -234,6 +235,13 @@ export const $sidebarCronOpen = persistentAtom(SIDEBAR_CRON_OPEN_STORAGE_KEY, fa
 // stays collapsed unless they've opened a platform before.
 export const $sidebarMessagingOpenIds = persistentAtom(
   SIDEBAR_MESSAGING_OPEN_STORAGE_KEY,
+  [] as string[],
+  Codecs.stringArray
+)
+// Nav rows the user hid via the row's hover action. Persisted so a relaunch
+// keeps the rail exactly as they left it; restored from the "…" overflow row.
+export const $sidebarHiddenNavIds = persistentAtom(
+  SIDEBAR_HIDDEN_NAV_STORAGE_KEY,
   [] as string[],
   Codecs.stringArray
 )
@@ -643,6 +651,12 @@ export function toggleSidebarMessagingOpen(sourceId: string) {
   $sidebarMessagingOpenIds.set(
     current.includes(sourceId) ? current.filter(id => id !== sourceId) : [...current, sourceId]
   )
+}
+
+export function toggleSidebarHiddenNav(id: string) {
+  const current = $sidebarHiddenNavIds.get()
+
+  $sidebarHiddenNavIds.set(current.includes(id) ? current.filter(hidden => hidden !== id) : [...current, id])
 }
 
 export function setSidebarAgentsGrouped(grouped: boolean) {

@@ -2616,6 +2616,8 @@ export const ru = defineLocale({
       artifacts: 'Артефакты',
       cron: 'Запланированные задачи'
     },
+    hideNavItem: label => `Скрыть «${label}» из боковой панели`,
+    showHidden: 'Показать скрытые',
     searchAria: 'Поиск сеансов',
     searchPlaceholder: 'Поиск сеансов…',
     clearSearch: 'Очистить поиск',

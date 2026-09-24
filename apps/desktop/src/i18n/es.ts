@@ -3918,6 +3918,8 @@ export const es = defineLocale({
       artifacts: 'Artefactos',
       cron: 'Tareas programadas'
     },
+    hideNavItem: label => `Ocultar ${label} de la barra lateral`,
+    showHidden: 'Mostrar ocultos',
     searchAria: 'Buscar sesiones',
     searchPlaceholder: 'Buscar sesiones…',
     clearSearch: 'Limpiar búsqueda',

@@ -3926,6 +3926,8 @@ export const de = defineLocale({
       artifacts: 'Artefakte',
       cron: 'Geplante Jobs'
     },
+    hideNavItem: label => `${label} in der Seitenleiste ausblenden`,
+    showHidden: 'Ausgeblendete anzeigen',
     searchAria: 'Sessions durchsuchen',
     searchPlaceholder: 'Sessions durchsuchen…',
     clearSearch: 'Suche löschen',
