@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: sync-upstream
@@ -24,38 +25,110 @@ jobs:
           token: ${{ secrets.SYNC_UPSTREAM_PAT || github.token }}
 
       - name: Merge upstream main into fork
+        id: merge
         env:
           SYNC_UPSTREAM_PAT: ${{ secrets.SYNC_UPSTREAM_PAT }}
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_OWNER: NousResearch
+          UPSTREAM_REPO: hermes-agent
+          CONFLICT_TITLE: "Upstream sync conflict"
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git remote add upstream https://github.com/NousResearch/hermes-agent.git
+          upstream_slug="${UPSTREAM_OWNER}/${UPSTREAM_REPO}"
+          git remote add upstream "https://github.com/${upstream_slug}.git"
           # --tags is explicit: the merge needs upstream main, and the tag mirror below
           # needs upstream's tag namespace. Relying on auto-followed tags would make the
           # mirror depend on which tags happen to be reachable from the fetched history.
           git fetch --tags upstream main
           before=$(git rev-parse HEAD)
-          # `-X ours` auto-resolves text conflicts but NOT modify/delete, and `git rm` refuses
-          # those paths. Stage the worktree to clear every unmerged entry; the PAT posture
-          # below then decides whether the workflow files actually ship in the push.
-          if ! git merge --no-edit -X ours upstream/main; then
-            git add -A -- .
-            git commit --no-edit -q
+          upstream_sha=$(git rev-parse upstream/main)
+
+          # No `-X ours`. Upstream edits the same files this fork customises
+          # (apps/desktop/src/app/chat/sidebar/index.tsx among them), and `-X ours`
+          # resolved those conflicts to the fork's side without failing: the merge
+          # reported success, the push landed, and upstream's change was dropped with
+          # nothing in the run log. A clean merge still lands unattended; only a real
+          # conflict escalates, to a PR that stays open until resolved deliberately.
+          if git merge --no-edit upstream/main; then
+            after=$(git rev-parse HEAD)
+            if [ "$before" != "$after" ]; then
+              # GITHUB_TOKEN cannot push commits touching .github/workflows/* (no `workflows`
+              # scope; it is not grantable via `permissions:`). Unless a PAT is configured,
+              # keep the fork's own workflow files in the sync commit so the push is never
+              # rejected. `git rm` first: `git checkout <tree> -- <path>` only restores paths
+              # present in <tree>, so a workflow file newly added upstream stays removed.
+              if [ -z "$SYNC_UPSTREAM_PAT" ] \
+                  && ! git diff --quiet "$before" "$after" -- .github/workflows; then
+                git rm -r -q .github/workflows
+                git checkout "$before" -- .github/workflows
+                git commit --amend --no-edit -q
+              fi
+              git push origin main
+              echo "landed=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "landed=false" >> "$GITHUB_OUTPUT"
+            fi
+            echo "conflicted=false" >> "$GITHUB_OUTPUT"
+            # A clean merge (or an already-up-to-date main) supersedes a conflict PR that
+            # an earlier run left open, so escalation state never goes stale.
+            for pr in $(gh pr list --state open --search "in:title $CONFLICT_TITLE" \
+                        --json number --jq '.[].number'); do
+              gh pr close "$pr" --comment "Superseded: upstream merged into main cleanly." || true
+            done
+          else
+            # Read the conflict set before aborting: `git merge --abort` clears the
+            # unmerged index entries, which is where `git diff --diff-filter=U` reads from.
+            conflicted=$(git diff --name-only --diff-filter=U || true)
+            count=$(printf '%s\n' "$conflicted" | grep -c . || true)
+            git merge --abort || true
+            {
+              echo "The scheduled fork sync hit a real merge conflict against $upstream_slug main"
+              echo "($upstream_sha). Nothing was pushed to main: the workflow refuses to land a"
+              echo "conflicted merge, so this PR is the only place the conflict is visible."
+              echo "Resolving it and pushing restores unattended syncs."
+              echo
+              echo "Conflicting files ($count):"
+              echo
+              echo '```'
+              printf '%s\n' "$conflicted"
+              echo '```'
+              echo
+              echo "Resolve locally, keeping BOTH sides of every conflict:"
+              echo
+              echo '```bash'
+              echo "git checkout main && git pull"
+              echo "git fetch upstream main"
+              echo "git merge upstream/main    # resolve the files listed above"
+              echo "git push origin main"
+              echo "gh pr list --state open --search 'in:title $CONFLICT_TITLE'   # then close it"
+              echo '```'
+            } > "$RUNNER_TEMP/sync-conflict-body.md"
+
+            if open_pr=$(gh pr list --state open --search "in:title $CONFLICT_TITLE" \
+                          --json number --jq '.[0].number' 2>/dev/null) && [ -n "$open_pr" ]; then
+              echo "::warning title=$CONFLICT_TITLE::upstream/main ($upstream_sha) still conflicts; PR #$open_pr is open. main was NOT updated."
+            else
+              gh pr create \
+                --base main \
+                --head "${UPSTREAM_OWNER}:main" \
+                --title "$CONFLICT_TITLE: merge $upstream_sha" \
+                --body-file "$RUNNER_TEMP/sync-conflict-body.md"
+            fi
+            echo "landed=false" >> "$GITHUB_OUTPUT"
+            echo "conflicted=true" >> "$GITHUB_OUTPUT"
+            echo "### Upstream sync conflict" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "main was **not** updated. $count file(s) conflict against $upstream_slug main." \
+                >> "$GITHUB_STEP_SUMMARY"
           fi
-          after=$(git rev-parse HEAD)
-          # GITHUB_TOKEN cannot push commits touching .github/workflows/* (no `workflows` scope;
-          # it is not grantable via `permissions:`). Unless a PAT is configured, keep the fork's
-          # own workflow files in the sync commit so the push is never rejected.
-          if [ -z "$SYNC_UPSTREAM_PAT" ] && [ "$before" != "$after" ] \
-              && ! git diff --quiet "$before" "$after" -- .github/workflows; then
-            git rm -r -q .github/workflows
-            git checkout "$before" -- .github/workflows
-            git commit --amend --no-edit -q
-          fi
-          git push origin main
 
       - name: Mirror upstream release tags
+        # Only meaningful when main actually moved: hermes_cli/version_info.py reads the
+        # nearest release tag, so mirroring ahead of an unmerged upstream would label a
+        # stale main with a version it does not contain.
+        if: steps.merge.outputs.conflicted != 'true'
         run: |
           set -euo pipefail
           # A fork carries none of upstream's tags, and hermes_cli/version_info.py reads
@@ -63,7 +136,7 @@ jobs:
           # tag's pyproject version). Without this mirror every sync re-creates the
           # "unknown" version that a tagless clone reports.
           #
-          # Non-fatal and unforced: the sync above has already landed, a rejected tag
+          # Non-fatal and unforced: the merge above has already landed, a rejected tag
           # must not make it look failed, and plain --tags never overwrites or deletes
           # a tag the fork already has. The next scheduled run retries.
           if ! git push origin --tags; then
