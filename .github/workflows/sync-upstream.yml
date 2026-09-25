@@ -31,7 +31,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git remote add upstream https://github.com/NousResearch/hermes-agent.git
-          git fetch upstream main
+          # --tags is explicit: the merge needs upstream main, and the tag mirror below
+          # needs upstream's tag namespace. Relying on auto-followed tags would make the
+          # mirror depend on which tags happen to be reachable from the fetched history.
+          git fetch --tags upstream main
           before=$(git rev-parse HEAD)
           # `-X ours` auto-resolves text conflicts but NOT modify/delete, and `git rm` refuses
           # those paths. Stage the worktree to clear every unmerged entry; the PAT posture
@@ -51,3 +54,18 @@ jobs:
             git commit --amend --no-edit -q
           fi
           git push origin main
+
+      - name: Mirror upstream release tags
+        run: |
+          set -euo pipefail
+          # A fork carries none of upstream's tags, and hermes_cli/version_info.py reads
+          # the nearest release tag to name the checkout (falling back to the CalVer
+          # tag's pyproject version). Without this mirror every sync re-creates the
+          # "unknown" version that a tagless clone reports.
+          #
+          # Non-fatal and unforced: the sync above has already landed, a rejected tag
+          # must not make it look failed, and plain --tags never overwrites or deletes
+          # a tag the fork already has. The next scheduled run retries.
+          if ! git push origin --tags; then
+            echo "::warning::release tag mirror incomplete; next scheduled run retries"
+          fi
