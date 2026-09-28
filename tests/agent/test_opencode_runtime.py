@@ -312,15 +312,18 @@ class TestEventBridge(unittest.TestCase):
         deltas = []
         agent._fire_reasoning_delta = deltas.append
         result = self._run(agent, [
-            json.dumps({"type": "reasoning", "part": {"type": "reasoning", "text": "Let me think"}}),
+            json.dumps({"type": "reasoning", "part": {"type": "reasoning", "text": "First block.\n"}}),
+            json.dumps({"type": "reasoning", "part": {"type": "reasoning", "text": "\nSecond block.\n"}}),
             json.dumps({"type": "text", "part": {"type": "text", "text": "DONE"}}),
             json.dumps({"type": "done"}),
         ])
         self.assertTrue(result["completed"])
-        self.assertEqual(deltas, ["Let me think"])
+        # Each completed OpenCode thinking block is its own Markdown paragraph, both
+        # live and persisted; otherwise Markdown would collapse them into one block.
+        self.assertEqual(deltas, ["First block.", "\n\nSecond block."])
         self.assertEqual(result["final_response"], "DONE")
         self.assertEqual(result["messages"][-1]["content"], "DONE")
-        self.assertEqual(result["messages"][-1]["reasoning"], "Let me think")
+        self.assertEqual(result["messages"][-1]["reasoning"], "First block.\n\nSecond block.")
 
     def test_top_level_error_shape_fails_the_turn(self) -> None:
         agent = build_agent_stub(model="big-pickle")

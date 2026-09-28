@@ -259,6 +259,24 @@ def _opencode_tool_result(state: Dict[str, Any]) -> tuple[str, bool]:
     return text[:4000], is_error
 
 
+def _append_opencode_reasoning_block(reasoning_parts: List[str], text: str) -> str:
+    """Add one completed OpenCode thinking block to the accumulated reasoning.
+
+    OpenCode emits each reasoning event only after its thinking block finishes, so
+    every non-empty event is a separate Markdown block. A single newline collapses
+    in Markdown; preserve the boundary with a blank line. Internal line breaks are
+    left untouched. Returns the delimited block, or an empty string when there is
+    no visible thinking to stream or persist.
+    """
+    block = text.strip()
+    if not block:
+        return ""
+    if reasoning_parts:
+        block = f"\n\n{block}"
+    reasoning_parts.append(block)
+    return block
+
+
 def _bridge_opencode_tool(agent, part: Dict[str, Any], started: Dict[str, Any],
                           finished: set[str]) -> int:
     """Project one ``tool_use`` part into the display callbacks (codex-bridge shapes).
@@ -412,10 +430,11 @@ def run_opencode_cli_turn(agent, *, user_message: str, original_user_message: An
                 part = event.get("part")
                 if isinstance(part, dict):
                     text = part.get("text")
-                    if isinstance(text, str) and text:
-                        reasoning_parts.append(text)
-                        _call_guarded(getattr(agent, "_fire_reasoning_delta", None),
-                                      "_fire_reasoning_delta raised", args=(text,))
+                    if isinstance(text, str):
+                        block = _append_opencode_reasoning_block(reasoning_parts, text)
+                        if block:
+                            _call_guarded(getattr(agent, "_fire_reasoning_delta", None),
+                                          "_fire_reasoning_delta raised", args=(block,))
             elif event_type == "error":
                 message = _extract_error(event)
                 if message:
@@ -459,7 +478,7 @@ def run_opencode_cli_turn(agent, *, user_message: str, original_user_message: An
     # Reasoning rides the canonical assistant_msg["reasoning"] store, rendered wherever the
     # surfaces show thinking; tool activity was already streamed live and stays out of history.
     assistant_message: Dict[str, Any] = {"role": "assistant", "content": final_text or ""}
-    reasoning_text = "\n".join(p for p in reasoning_parts if p).strip()
+    reasoning_text = "".join(reasoning_parts).strip()
     if reasoning_text:
         assistant_message["reasoning"] = reasoning_text
     turn = SimpleNamespace(
