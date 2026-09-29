@@ -396,6 +396,48 @@ it.each([false, true])('keeps a completed tool card when a text-only refresh lan
   ])
 })
 
+it('keeps streamed reasoning boundaries when a blob-only refresh lands', async () => {
+  // Opencode-shaped turn: reasoning streams in discrete blocks around a tool
+  // round, but the persisted row carries one reasoning blob and no tool
+  // calls. The post-turn refresh must not collapse the streamed boundaries
+  // into that blob.
+  render(<Harness />)
+  send('message.start')
+  send('reasoning.delta', { text: 'First thought. ' })
+  send('tool.start', { name: 'read_file', tool_id: 'read-tool', args: { path: 'example.txt' } })
+  send('tool.complete', { name: 'read_file', tool_id: 'read-tool', result: 'example content' })
+  send('reasoning.delta', { text: 'Second thought.' })
+  send('message.delta', { text: FINAL })
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(100)
+  })
+  send('message.complete', {
+    text: FINAL,
+    persisted_turn: { row_ids: [3, 6], user_row_id: 3, final_assistant_row_id: 6, complete: true }
+  })
+
+  const liveReasoning = $sessionStates.get()[RUNTIME].messages.flatMap(message =>
+    message.parts.filter(part => part.type === 'reasoning').map(part => part.text)
+  )
+  expect(liveReasoning).toEqual(['First thought. ', 'Second thought.'])
+
+  vi.mocked(getLatestSessionMessages).mockResolvedValueOnce({
+    session_id: STORED,
+    messages: [
+      ...history,
+      { id: 6, role: 'assistant', content: FINAL, timestamp: 6, reasoning: 'First thought. Second thought.' }
+    ]
+  })
+  await act(async () => {
+    await refresh()
+  })
+
+  const afterReasoning = $sessionStates.get()[RUNTIME].messages.flatMap(message =>
+    message.parts.filter(part => part.type === 'reasoning').map(part => part.text)
+  )
+  expect(afterReasoning).toEqual(['First thought. ', 'Second thought.'])
+})
+
 it('retries an interrupted reconnect read once on idle, even before that read returns', async () => {
   const stale = deferredHistory()
   const fresh = deferredHistory()
