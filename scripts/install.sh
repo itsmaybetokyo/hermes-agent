@@ -33,6 +33,10 @@ BOLD='\033[1m'
 # Configuration
 REPO_URL_SSH="git@github.com:itsmaybetokyo/hermes-agent.git"
 REPO_URL_HTTPS="https://github.com/itsmaybetokyo/hermes-agent.git"
+# The effective source: an explicit HERMES_REPO_URL wins (CI mirrors, local
+# paths), otherwise the fork's HTTPS default. Referenced by stage_repository
+# and the rerun path below; without it `set -u` aborts on first use.
+REPO_URL="${HERMES_REPO_URL:-$REPO_URL_HTTPS}"
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 # INSTALL_DIR is resolved AFTER arg parsing and OS detection so we can pick an
 # FHS-style layout for root installs.  Track whether the user gave us an
