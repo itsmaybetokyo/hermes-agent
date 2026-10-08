@@ -16,7 +16,7 @@
  */
 
 import { getOlderSessionMessages, type ProfileScope } from '@/hermes'
-import { type ChatMessage, chatMessageText, toChatMessages } from '@/lib/chat-messages'
+import { type ChatMessage, type ChatMessagePart, chatMessageText, normalizeWs, toChatMessages } from '@/lib/chat-messages'
 import {
   recordTranscriptBackfillPage,
   tailStateFromPage,
@@ -204,6 +204,83 @@ function retainCompletedTurnTools(messages: ChatMessage[], previous: ChatMessage
   )
 }
 
+/**
+ * Streaming keeps one reasoning part per channel run; the persisted row keeps
+ * a single blob for the whole turn. A refresh that swaps the live parts for
+ * the blob collapses the transcript into one Thought block the moment the
+ * turn settles — even though both carry the same text. Where the stored blob
+ * confirms the streamed parts (same normalized text), keep the streamed
+ * boundaries instead. Anything else (backend rewrite, lost deltas) keeps the
+ * authoritative stored copy.
+ */
+function retainStreamedReasoningParts(messages: ChatMessage[], previous: ChatMessage[]): ChatMessage[] {
+  const previousByRowId = new Map<number, ChatMessage>()
+
+  for (const message of previous) {
+    if (message.role === 'assistant' && message.rowId !== undefined && !previousByRowId.has(message.rowId)) {
+      previousByRowId.set(message.rowId, message)
+    }
+  }
+
+  if (previousByRowId.size === 0) {
+    return messages
+  }
+
+  const reasoningText = (parts: ChatMessagePart[]): string =>
+    parts
+      .filter((part): part is Extract<ChatMessagePart, { type: 'reasoning' }> => part.type === 'reasoning')
+      .map(part => part.text)
+      .join('')
+
+  let changed = false
+
+  const retained = messages.map(message => {
+    if (message.role !== 'assistant' || message.rowId === undefined) {
+      return message
+    }
+
+    const live = previousByRowId.get(message.rowId)
+
+    if (!live) {
+      return message
+    }
+
+    const liveReasoning = live.parts.filter(
+      (part): part is Extract<ChatMessagePart, { type: 'reasoning' }> => part.type === 'reasoning'
+    )
+
+    // A single live part holds no boundary detail beyond the blob; swapping
+    // it would only churn part identity (timers, scroll anchors) for no gain.
+    if (liveReasoning.length < 2 || !message.parts.some(part => part.type === 'reasoning')) {
+      return message
+    }
+
+    if (normalizeWs(reasoningText(liveReasoning)) !== normalizeWs(reasoningText(message.parts))) {
+      return message
+    }
+
+    changed = true
+    const out: ChatMessagePart[] = []
+    let substituted = false
+
+    for (const part of message.parts) {
+      if (part.type !== 'reasoning') {
+        out.push(part)
+        continue
+      }
+
+      if (!substituted) {
+        out.push(...liveReasoning)
+        substituted = true
+      }
+    }
+
+    return { ...message, parts: out }
+  })
+
+  return changed ? retained : messages
+}
+
 function sharesDurableRow(first: ChatMessage[], second: ChatMessage[]): boolean {
   const rowIds = durableRowIds(first)
 
@@ -297,7 +374,7 @@ export function graftRefreshedTailOntoBackfill(refreshedTail: ChatMessage[], pre
     previous.slice(0, anchor).every(message => message.rowId === undefined || message.rowId < anchorRowId)
 
   if (anchor === 0) {
-    return retainCompletedTurnTools(refreshedTail, previous)
+    return retainStreamedReasoningParts(retainCompletedTurnTools(refreshedTail, previous), previous)
   }
 
   if (prefixIsEarlier) {
@@ -317,7 +394,10 @@ export function graftRefreshedTailOntoBackfill(refreshedTail: ChatMessage[], pre
       .slice(0, anchor)
       .filter(message => message.rowId !== undefined || !refreshedIds.has(message.id))
 
-    return retainCompletedTurnTools(prefix.length ? [...prefix, ...refreshedTail] : refreshedTail, previous)
+    return retainStreamedReasoningParts(
+      retainCompletedTurnTools(prefix.length ? [...prefix, ...refreshedTail] : refreshedTail, previous),
+      previous
+    )
   }
 
   const refreshedIds = new Set(refreshedTail.map(message => message.id))
@@ -326,10 +406,10 @@ export function graftRefreshedTailOntoBackfill(refreshedTail: ChatMessage[], pre
   // tail really did cover. Take the page. This is what keeps a finished reply
   // through a long tool turn.
   if (pageCoversWindow(previous, refreshedIds, refreshedRowIds)) {
-    return retainCompletedTurnTools(refreshedTail, previous)
+    return retainStreamedReasoningParts(retainCompletedTurnTools(refreshedTail, previous), previous)
   }
 
-  return retainCompletedTurnTools(mergeOverlappingTail(previous, refreshedTail), previous)
+  return retainStreamedReasoningParts(retainCompletedTurnTools(mergeOverlappingTail(previous, refreshedTail), previous), previous)
 }
 
 const REFRESH_OVERLAP_PAGE_LIMIT = 4
