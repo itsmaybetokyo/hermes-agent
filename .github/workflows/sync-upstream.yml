@@ -77,6 +77,8 @@ jobs:
                         --json number --jq '.[].number'); do
               gh pr close "$pr" --comment "Superseded: upstream merged into main cleanly." || true
             done
+            # Best-effort: the branch only exists while a conflict PR is open.
+            git push origin --delete sync/upstream-conflict 2>/dev/null || true
           else
             # Read the conflict set before aborting: `git merge --abort` clears the
             # unmerged index entries, which is where `git diff --diff-filter=U` reads from.
@@ -106,13 +108,28 @@ jobs:
               echo '```'
             } > "$RUNNER_TEMP/sync-conflict-body.md"
 
+            conflict_branch="sync/upstream-conflict"
             if open_pr=$(gh pr list --state open --search "in:title $CONFLICT_TITLE" \
                           --json number --jq '.[0].number' 2>/dev/null) && [ -n "$open_pr" ]; then
+              gh pr comment "$open_pr" --body-file "$RUNNER_TEMP/sync-conflict-body.md" || true
               echo "::warning title=$CONFLICT_TITLE::upstream/main ($upstream_sha) still conflicts; PR #$open_pr is open. main was NOT updated."
             else
+              # GITHUB_TOKEN cannot open a cross-repo PR (a head outside this
+              # repo is rejected as "Resource not accessible by integration"),
+              # so escalate on a same-repo branch. The branch carries only the
+              # conflict record outside .github/workflows/ (which GITHUB_TOKEN
+              # is allowed to push); the resolution still lands on main
+              # locally, and the next clean sync closes this PR and deletes
+              # the branch.
+              git checkout -B "$conflict_branch"
+              mkdir -p .github
+              printf '%s\n' "$conflicted" > .github/upstream-sync-conflict.txt
+              git add .github/upstream-sync-conflict.txt
+              git commit -q -m "chore(sync): record upstream $upstream_sha conflict ($count files)" || true
+              git push --force origin "$conflict_branch"
               gh pr create \
                 --base main \
-                --head "${UPSTREAM_OWNER}:main" \
+                --head "$conflict_branch" \
                 --title "$CONFLICT_TITLE: merge $upstream_sha" \
                 --body-file "$RUNNER_TEMP/sync-conflict-body.md"
             fi
