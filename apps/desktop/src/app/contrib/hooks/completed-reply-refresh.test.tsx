@@ -416,9 +416,12 @@ it('keeps streamed reasoning boundaries when a blob-only refresh lands', async (
     persisted_turn: { row_ids: [3, 6], user_row_id: 3, final_assistant_row_id: 6, complete: true }
   })
 
-  const liveReasoning = $sessionStates.get()[RUNTIME].messages.flatMap(message =>
-    message.parts.filter(part => part.type === 'reasoning').map(part => part.text)
-  )
+  const liveReasoning = $sessionStates
+    .get()
+    [RUNTIME].messages.flatMap(message =>
+      message.parts.filter(part => part.type === 'reasoning').map(part => part.text)
+    )
+
   expect(liveReasoning).toEqual(['First thought. ', 'Second thought.'])
 
   vi.mocked(getLatestSessionMessages).mockResolvedValueOnce({
@@ -432,9 +435,12 @@ it('keeps streamed reasoning boundaries when a blob-only refresh lands', async (
     await refresh()
   })
 
-  const afterReasoning = $sessionStates.get()[RUNTIME].messages.flatMap(message =>
-    message.parts.filter(part => part.type === 'reasoning').map(part => part.text)
-  )
+  const afterReasoning = $sessionStates
+    .get()
+    [RUNTIME].messages.flatMap(message =>
+      message.parts.filter(part => part.type === 'reasoning').map(part => part.text)
+    )
+
   expect(afterReasoning).toEqual(['First thought. ', 'Second thought.'])
 })
 

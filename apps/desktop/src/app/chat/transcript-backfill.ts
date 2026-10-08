@@ -17,7 +17,13 @@
 
 import { transcriptRowIds } from '@/app/session/hooks/use-session-actions/pending-turn-identity'
 import { getOlderSessionMessages, getSessionMessages, type ProfileScope } from '@/hermes'
-import { type ChatMessage, type ChatMessagePart, chatMessageText, normalizeWs, toChatMessages } from '@/lib/chat-messages'
+import {
+  type ChatMessage,
+  type ChatMessagePart,
+  chatMessageText,
+  normalizeWs,
+  toChatMessages
+} from '@/lib/chat-messages'
 import {
   recordTranscriptBackfillPage,
   tailStateFromPage,
@@ -344,6 +350,7 @@ function retainStreamedReasoningParts(messages: ChatMessage[], previous: ChatMes
     for (const part of message.parts) {
       if (part.type !== 'reasoning') {
         out.push(part)
+
         continue
       }
 
@@ -513,7 +520,10 @@ export function graftRefreshedTailOntoBackfill(refreshedTail: ChatMessage[], pre
     return retainStreamedReasoningParts(retainCompletedTurnTools(refreshedTail, previous), previous)
   }
 
-  return retainStreamedReasoningParts(retainCompletedTurnTools(mergeOverlappingTail(previous, refreshedTail), previous), previous)
+  return retainStreamedReasoningParts(
+    retainCompletedTurnTools(mergeOverlappingTail(previous, refreshedTail), previous),
+    previous
+  )
 }
 
 const REFRESH_OVERLAP_PAGE_LIMIT = 4
