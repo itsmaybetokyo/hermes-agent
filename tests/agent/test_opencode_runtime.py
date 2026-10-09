@@ -356,6 +356,33 @@ class TestEventBridge(unittest.TestCase):
         self.assertTrue(result["completed"])
         self.assertEqual(ends, [])
 
+    def test_thinking_only_turn_fails_loudly(self) -> None:
+        # Upstream truncation race: thinking streamed, tool_use/text tail
+        # dropped. A silent complete strands the user with a thinking-only
+        # bubble, so the turn must fail with a retryable error instead.
+        agent = build_agent_stub(model="big-pickle")
+        agent._fire_reasoning_delta = lambda block: None
+        result = self._run(agent, [
+            json.dumps({"type": "reasoning", "part": {"type": "reasoning", "text": "Voy a hacer esto.\n"}}),
+            json.dumps({"type": "step_finish", "part": {"type": "step-finish", "reason": "tool-calls"}}),
+            json.dumps({"type": "done"}),
+        ])
+        self.assertFalse(result["completed"])
+        self.assertIn("without an answer", str(result["error"]))
+        self.assertIn("tool calls", str(result["error"]))
+
+    def test_tools_without_text_still_completes(self) -> None:
+        agent = build_agent_stub(model="big-pickle")
+        agent._fire_reasoning_delta = lambda block: None
+        result = self._run(agent, [
+            json.dumps({"type": "tool_use", "part": {
+                "type": "tool", "tool": "bash", "callID": "call_1",
+                "state": {"status": "completed", "input": {"command": "echo hi"},
+                          "output": "hi", "time": {"start": 1000, "end": 1500}}}}),
+            json.dumps({"type": "done"}),
+        ])
+        self.assertTrue(result["completed"])
+
     def test_top_level_error_shape_fails_the_turn(self) -> None:
         agent = build_agent_stub(model="big-pickle")
         result = self._run(agent, [

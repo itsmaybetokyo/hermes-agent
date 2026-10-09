@@ -353,8 +353,9 @@ def run_opencode_cli_turn(agent, *, user_message: str, original_user_message: An
     tool_started: dict[str, Any] = {}
     tool_finished: set[str] = set()
     tool_completed = 0
-    usage_last: Optional[dict[str, int]] = None
-    error: Optional[str] = None
+    usage_last: dict[str, int] | None = None
+    last_step_reason: str | None = None
+    error: str | None = None
     interrupted = False
     watchdog_expired = False
 
@@ -422,6 +423,9 @@ def run_opencode_cli_turn(agent, *, user_message: str, original_user_message: An
                 part = event.get("part")
                 if isinstance(part, dict) and isinstance(part.get("tokens"), dict):
                     usage_last = _opencode_tokens_to_usage(part["tokens"]) or usage_last
+                reason = part.get("reason") if isinstance(part, dict) else None
+                if isinstance(reason, str) and reason:
+                    last_step_reason = reason
             elif event_type == "tool_use":
                 part = event.get("part")
                 if isinstance(part, dict):
@@ -500,6 +504,20 @@ def run_opencode_cli_turn(agent, *, user_message: str, original_user_message: An
         agent, turn, messages, original_user_message=original_user_message, should_review_memory=should_review_memory,
     )
     completed = not interrupted and not watchdog_expired and error is None
+    if completed and not final_text and tool_completed == 0:
+        # Upstream truncation race (opencode#31435/#31404): `run --format=json`
+        # can exit having emitted thinking while dropping the tool_use/text
+        # tail, even as its own session log kept going. A silent complete
+        # would strand the user with a thinking-only bubble, so fail loudly.
+        hint = ("the last reported step still expected tool calls; " if last_step_reason == "tool-calls" else "")
+        error = (
+            "opencode run ended without an answer "
+            f"({len(reasoning_parts)} thinking block(s) streamed, no text, no completed tools; "
+            f"{hint}the opencode session log kept the full trace). "
+            "Retry the message — reruns usually stream fully."
+        )
+        logger.warning("opencode_cli empty turn: %s", error)
+        completed = False
     return _turn_result(
         interrupt, messages, api_calls=1, completed=completed, error=error, final_response=final_text,
         agent_persisted=True, **usage_result,
