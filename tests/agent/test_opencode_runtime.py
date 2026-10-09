@@ -322,8 +322,51 @@ class TestEventBridge(unittest.TestCase):
         # live and persisted; otherwise Markdown would collapse them into one block.
         self.assertEqual(deltas, ["First block.", "\n\nSecond block."])
         self.assertEqual(result["final_response"], "DONE")
-        self.assertEqual(result["messages"][-1]["content"], "DONE")
-        self.assertEqual(result["messages"][-1]["reasoning"], "First block.\n\nSecond block.")
+        # One assistant row per step (here a single implicit step), then the
+        # trailing final-text row: the settled transcript renders sequentially.
+        tail = result["messages"][-2:]
+        self.assertEqual(tail[0]["role"], "assistant")
+        self.assertEqual(tail[0]["reasoning"], "First block.\n\nSecond block.")
+        self.assertNotIn("tool_calls", tail[0])
+        self.assertEqual(tail[1]["role"], "assistant")
+        self.assertEqual(tail[1]["content"], "DONE")
+
+    def test_completed_tools_persist_as_rows_per_step(self) -> None:
+        agent = build_agent_stub(model="big-pickle")
+        agent._fire_reasoning_delta = lambda block: None
+        tool_event = {
+            "type": "tool_use",
+            "part": {"type": "tool", "tool": "bash", "callID": "call_1",
+                     "state": {"status": "completed", "input": {"command": "echo hi"},
+                               "output": "hi", "time": {"start": 1000, "end": 1500}}},
+        }
+        result = self._run(agent, [
+            json.dumps({"type": "step_start"}),
+            json.dumps({"type": "reasoning", "part": {"type": "reasoning", "text": "First.\n"}}),
+            json.dumps(tool_event),
+            json.dumps({"type": "step_finish", "part": {"type": "step-finish", "reason": "tool-calls"}}),
+            json.dumps({"type": "reasoning", "part": {"type": "reasoning", "text": "Second.\n"}}),
+            json.dumps({"type": "text", "part": {"type": "text", "text": "DONE"}}),
+            json.dumps({"type": "done"}),
+        ])
+        self.assertTrue(result["completed"])
+        tail = result["messages"][-4:]
+        self.assertEqual([m["role"] for m in tail], ["assistant", "tool", "assistant", "assistant"])
+        step_row, tool_row, final_row = tail[0], tail[1], tail[3]
+        self.assertEqual(step_row["reasoning"], "First.")
+        calls = step_row["tool_calls"]
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["call_id"], "call_1")
+        self.assertEqual(calls[0]["function"]["name"], "bash")
+        self.assertEqual(tool_row["tool_call_id"], "call_1")
+        self.assertEqual(tool_row["tool_name"], "bash")
+        self.assertEqual(tool_row["content"], "hi")
+        # Second-step reasoning rides its own row, final text trails text-only
+        # so the turn receipt still addresses the settled bubble.
+        self.assertEqual(tail[2]["reasoning"], "Second.")
+        self.assertNotIn("tool_calls", tail[2])
+        self.assertEqual(final_row["role"], "assistant")
+        self.assertEqual(final_row["content"], "DONE")
 
     def test_reasoning_block_end_fires_between_consecutive_blocks(self) -> None:
         # Each completed thinking block must close the previous display part,

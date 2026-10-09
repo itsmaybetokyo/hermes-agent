@@ -278,12 +278,15 @@ def _append_opencode_reasoning_block(reasoning_parts: list[str], text: str) -> s
 
 
 def _bridge_opencode_tool(agent, part: dict[str, Any], started: dict[str, Any],
-                          finished: set[str]) -> int:
+                           finished: set[str],
+                           record: list[dict[str, Any]] | None = None) -> int:
     """Project one ``tool_use`` part into the display callbacks (codex-bridge shapes).
 
     Fires tool.started once per callID and tool.completed on a terminal status;
     returns 1 when a tool completed (0 otherwise) for turn accounting. Every display
-    callback is guarded: a buggy hook must never tear down the turn.
+    callback is guarded: a buggy hook must never tear down the turn. Completed
+    calls are also appended to ``record`` (when given) so the turn can persist
+    them as transcript rows instead of leaving tools live-only.
     """
     name = str(part.get("tool") or "unknown")
     call_id = str(part.get("callID") or "")
@@ -324,6 +327,13 @@ def _bridge_opencode_tool(agent, part: dict[str, Any], started: dict[str, Any],
     _call_guarded(getattr(agent, "tool_complete_callback", None),
                   "tool_complete_callback raised for %s", name,
                   args=(call_id or name, name, args, result))
+    if record is not None:
+        text = result
+        if not text and is_error:
+            err = state.get("error")
+            text = err if isinstance(err, str) and err.strip() else f"({name} failed)"
+        record.append({"call_id": call_id, "name": name, "args": args,
+                       "result": text, "is_error": is_error})
     return 1
 
 
@@ -353,11 +363,28 @@ def run_opencode_cli_turn(agent, *, user_message: str, original_user_message: An
     tool_started: dict[str, Any] = {}
     tool_finished: set[str] = set()
     tool_completed = 0
+    # Per-step transcript: reasoning blocks and completed tools attributed by
+    # arrival window, so persisted rows render the turn sequentially instead
+    # of one reasoning blob up front. Steps with neither stay out.
+    steps: list[dict[str, Any]] = []
+    step: dict[str, Any] | None = None
     usage_last: dict[str, int] | None = None
     last_step_reason: str | None = None
     error: str | None = None
     interrupted = False
     watchdog_expired = False
+
+    def _open_step() -> dict[str, Any]:
+        nonlocal step
+        if step is None:
+            step = {"reasoning": [], "tools": []}
+        return step
+
+    def _close_step() -> None:
+        nonlocal step
+        if step is not None and (step["reasoning"] or step["tools"]):
+            steps.append(step)
+        step = None
 
     def _watchdog(process: "subprocess.Popen") -> None:
         time.sleep(timeout_seconds)
@@ -409,7 +436,10 @@ def run_opencode_cli_turn(agent, *, user_message: str, original_user_message: An
             if not isinstance(event, dict):
                 continue
             event_type = event.get("type", "")
-            if event_type == "text":
+            if event_type == "step_start":
+                _close_step()
+                _open_step()
+            elif event_type == "text":
                 part = event.get("part")
                 if isinstance(part, dict):
                     text = part.get("text")
@@ -426,10 +456,12 @@ def run_opencode_cli_turn(agent, *, user_message: str, original_user_message: An
                 reason = part.get("reason") if isinstance(part, dict) else None
                 if isinstance(reason, str) and reason:
                     last_step_reason = reason
+                _close_step()
             elif event_type == "tool_use":
                 part = event.get("part")
                 if isinstance(part, dict):
-                    tool_completed += _bridge_opencode_tool(agent, part, tool_started, tool_finished)
+                    tool_completed += _bridge_opencode_tool(
+                        agent, part, tool_started, tool_finished, record=_open_step()["tools"])
             elif event_type == "reasoning":
                 part = event.get("part")
                 if isinstance(part, dict):
@@ -444,6 +476,7 @@ def run_opencode_cli_turn(agent, *, user_message: str, original_user_message: An
                                           "_fire_reasoning_block_end raised")
                         block = _append_opencode_reasoning_block(reasoning_parts, text)
                         if block:
+                            _open_step()["reasoning"].append(block)
                             _call_guarded(getattr(agent, "_fire_reasoning_delta", None),
                                           "_fire_reasoning_delta raised", args=(block,))
             elif event_type == "error":
@@ -485,15 +518,37 @@ def run_opencode_cli_turn(agent, *, user_message: str, original_user_message: An
     if error and not watchdog_expired:
         logger.warning("opencode_cli turn error: %s", error)
 
-    # Assemble the assistant message and persist (agent_persisted=True skips the gateway rewrite).
-    # Reasoning rides the canonical assistant_msg["reasoning"] store, rendered wherever the
-    # surfaces show thinking; tool activity was already streamed live and stays out of history.
-    assistant_message: dict[str, Any] = {"role": "assistant", "content": final_text or ""}
-    reasoning_text = "".join(reasoning_parts).strip()
-    if reasoning_text:
-        assistant_message["reasoning"] = reasoning_text
+    # Assemble the projected transcript and persist (agent_persisted=True skips
+    # the gateway rewrite). One assistant row per agentic step — reasoning and
+    # that step's tool calls together, tool result rows right after — so the
+    # settled transcript renders the turn sequentially instead of one reasoning
+    # blob up front. The trailing row carries the final text (possibly empty:
+    # it renders nothing, but as the tool_calls-free last assistant row it
+    # keeps the turn receipt addressing the settled bubble).
+    _close_step()
+    projected_messages: list[dict[str, Any]] = []
+    for finished_step in steps:
+        calls = [
+            {"id": tool["call_id"] or tool["name"], "call_id": tool["call_id"] or tool["name"],
+             "type": "function",
+             "function": {"name": tool["name"],
+                          "arguments": json.dumps(tool["args"]) if isinstance(tool["args"], dict) else "{}"}}
+            for tool in finished_step["tools"]
+        ]
+        step_reasoning = "".join(finished_step["reasoning"]).strip()
+        step_row: dict[str, Any] = {"role": "assistant", "content": ""}
+        if step_reasoning:
+            step_row["reasoning"] = step_reasoning
+        if calls:
+            step_row["tool_calls"] = calls
+        projected_messages.append(step_row)
+        for tool in finished_step["tools"]:
+            projected_messages.append({"role": "tool", "content": tool["result"],
+                                       "tool_call_id": tool["call_id"] or tool["name"],
+                                       "tool_name": tool["name"]})
+    projected_messages.append({"role": "assistant", "content": final_text or ""})
     turn = SimpleNamespace(
-        projected_messages=[assistant_message],
+        projected_messages=projected_messages,
         submitted_user_text=None,  # assistant row — never stripped by the turn-start-dedup
         final_text=final_text, error=(error or None), interrupted=interrupted,
         tool_iterations=tool_completed, token_usage_last=usage_last, compacted=False,
