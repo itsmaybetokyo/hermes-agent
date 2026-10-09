@@ -35021,7 +35021,7 @@
       },
       "StreamDeltaPayload": {
         "additionalProperties": false,
-        "description": "``prompt_turn._invoke_agent._stream`` (message.delta: ``text`` + optional ``rendered``),\n``agent_callbacks._agent_cbs`` (reasoning.delta / thinking.delta), ``tool_progress._progress_reasoning``\n(reasoning.available). ``verbose`` rides only when the session's verbose reasoning mode is on.",
+        "description": "``prompt_turn._invoke_agent._stream`` (message.delta: ``text`` + optional ``rendered``),\n``agent_callbacks._agent_cbs`` (reasoning.delta / thinking.delta), ``tool_progress._progress_reasoning``\n(reasoning.available). ``verbose`` rides only when the session's verbose reasoning mode is on.\n``block_end`` marks a completed thinking block (opencode emits thinking block-by-block):\nconsumers that coalesce adjacent same-channel deltas complete the open\nreasoning part first, keeping one card per block instead of one glued blob.",
         "properties": {
           "text": {
             "title": "Text",
@@ -35050,6 +35050,18 @@
             ],
             "default": null,
             "title": "Verbose"
+          },
+          "block_end": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Block End"
           }
         },
         "required": [

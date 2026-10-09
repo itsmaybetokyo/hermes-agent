@@ -116,11 +116,15 @@ event("message.start", None, doc="A turn began streaming; no payload.")
 class StreamDeltaPayload(Payload):
     """``prompt_turn._invoke_agent._stream`` (message.delta: ``text`` + optional ``rendered``),
     ``agent_callbacks._agent_cbs`` (reasoning.delta / thinking.delta), ``tool_progress._progress_reasoning``
-    (reasoning.available). ``verbose`` rides only when the session's verbose reasoning mode is on."""
+    (reasoning.available). ``verbose`` rides only when the session's verbose reasoning mode is on.
+    ``block_end`` marks a completed thinking block (opencode emits thinking block-by-block):
+    consumers that coalesce adjacent same-channel deltas complete the open
+    reasoning part first, keeping one card per block instead of one glued blob."""
 
     text: str
     rendered: str | None = None
     verbose: bool | None = None
+    block_end: bool | None = None
 
 
 event("message.delta", StreamDeltaPayload, doc="One streamed chunk of the assistant reply.")

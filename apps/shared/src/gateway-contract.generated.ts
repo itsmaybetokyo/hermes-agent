@@ -4658,11 +4658,12 @@ export interface ErrorPayload {
 export interface NoticePayload {
   message: string
 }
-/** ``prompt_turn._invoke_agent._stream`` (message.delta: ``text`` + optional ``rendered``), ``agent_callbacks._agent_cbs`` (reasoning.delta / thinking.delta), ``tool_progress._progress_reasoning`` (reasoning.available). ``verbose`` rides only when the session's verbose reasoning mode is on. */
+/** ``prompt_turn._invoke_agent._stream`` (message.delta: ``text`` + optional ``rendered``), ``agent_callbacks._agent_cbs`` (reasoning.delta / thinking.delta), ``tool_progress._progress_reasoning`` (reasoning.available). ``verbose`` rides only when the session's verbose reasoning mode is on. ``block_end`` marks a completed thinking block (opencode emits thinking block-by-block): consumers that coalesce adjacent same-channel deltas complete the open reasoning part first, keeping one card per block instead of one glued blob. */
 export interface StreamDeltaPayload {
   text: string
   rendered?: string | null
   verbose?: boolean | null
+  block_end?: boolean | null
 }
 /** ``prompt_turn._interim_assistant_cb`` / ``agent_callbacks`` interim_assistant_callback. */
 export interface MessageInterimPayload {

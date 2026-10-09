@@ -18,7 +18,7 @@ from unittest.mock import patch
 from agent import opencode_runtime as ort
 
 
-def build_agent_stub(model: str = "big-pickle", session_cwd: str = None):
+def build_agent_stub(model: str = "big-pickle", session_cwd: str | None = None):
     """Minimal agent surface the codex_runtime bookkeeping touches (no session DB)."""
     agent = SimpleNamespace(
         model=model,
@@ -158,7 +158,7 @@ def _patched_cost():
     from decimal import Decimal
     from agent.usage_pricing import CostResult
     return patch("agent.usage_pricing.estimate_usage_cost",
-                 return_value=CostResult(amount_usd=Decimal("0"), status="unknown", source="none",
+                 return_value=CostResult(amount_usd=Decimal(0), status="unknown", source="none",
                                          label="unknown", fetched_at=now))
 
 
@@ -324,6 +324,37 @@ class TestEventBridge(unittest.TestCase):
         self.assertEqual(result["final_response"], "DONE")
         self.assertEqual(result["messages"][-1]["content"], "DONE")
         self.assertEqual(result["messages"][-1]["reasoning"], "First block.\n\nSecond block.")
+
+    def test_reasoning_block_end_fires_between_consecutive_blocks(self) -> None:
+        # Each completed thinking block must close the previous display part,
+        # or adjacent-channel coalescing glues them into one card and the
+        # settled transcript keeps a single blob.
+        agent = build_agent_stub(model="big-pickle")
+        agent._fire_reasoning_delta = lambda block: None
+        ends = []
+        agent._fire_reasoning_block_end = lambda: ends.append(1)
+        result = self._run(agent, [
+            json.dumps({"type": "reasoning", "part": {"type": "reasoning", "text": "First block.\n"}}),
+            json.dumps({"type": "reasoning", "part": {"type": "reasoning", "text": "\nSecond block.\n"}}),
+            json.dumps({"type": "reasoning", "part": {"type": "reasoning", "text": "\nThird block.\n"}}),
+            json.dumps({"type": "text", "part": {"type": "text", "text": "DONE"}}),
+            json.dumps({"type": "done"}),
+        ])
+        self.assertTrue(result["completed"])
+        self.assertEqual(len(ends), 2)
+
+    def test_reasoning_block_end_absent_without_prior_block(self) -> None:
+        agent = build_agent_stub(model="big-pickle")
+        agent._fire_reasoning_delta = lambda block: None
+        ends = []
+        agent._fire_reasoning_block_end = lambda: ends.append(1)
+        result = self._run(agent, [
+            json.dumps({"type": "reasoning", "part": {"type": "reasoning", "text": "Only block.\n"}}),
+            json.dumps({"type": "text", "part": {"type": "text", "text": "DONE"}}),
+            json.dumps({"type": "done"}),
+        ])
+        self.assertTrue(result["completed"])
+        self.assertEqual(ends, [])
 
     def test_top_level_error_shape_fails_the_turn(self) -> None:
         agent = build_agent_stub(model="big-pickle")

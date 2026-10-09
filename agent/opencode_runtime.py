@@ -113,7 +113,7 @@ def _xdg_root(agent) -> Path:
     return Path(tempfile.gettempdir()) / f"hermes-opencode-xdg-{ident}"
 
 
-def _opencode_env(root: Path) -> Dict[str, str]:
+def _opencode_env(root: Path) -> dict[str, str]:
     env = {k: v for k, v in os.environ.items()}
     for name in ("XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"):
         env.pop(name, None)
@@ -135,7 +135,7 @@ def _flatten_content(content: Any) -> str:
         return content
     if not isinstance(content, list):
         return ""
-    chunks: List[str] = []
+    chunks: list[str] = []
     for part in content:
         if isinstance(part, str):
             chunks.append(part)
@@ -148,9 +148,9 @@ def _flatten_content(content: Any) -> str:
     return "\n".join(chunks).strip()
 
 
-def _transcript_to_prompt(messages: List[Dict[str, Any]]) -> str:
+def _transcript_to_prompt(messages: list[dict[str, Any]]) -> str:
     """Serialize the Hermes transcript into the single prompt handed to ``opencode run``."""
-    blocks: List[str] = []
+    blocks: list[str] = []
     for message in messages:
         if not isinstance(message, dict):
             continue
@@ -161,7 +161,7 @@ def _transcript_to_prompt(messages: List[Dict[str, Any]]) -> str:
     return "\n\n".join(blocks)
 
 
-def _opencode_tokens_to_usage(tokens: Any) -> Optional[Dict[str, int]]:
+def _opencode_tokens_to_usage(tokens: Any) -> Optional[dict[str, int]]:
     """Translate the CLI's ``step_finish.part.tokens`` shape into the codex-shaped
     ``token_usage_last`` dict ``_record_codex_app_server_usage`` understands."""
     if not isinstance(tokens, dict) or not tokens:
@@ -178,7 +178,7 @@ def _opencode_tokens_to_usage(tokens: Any) -> Optional[Dict[str, int]]:
     return usage if any(usage.values()) else None
 
 
-def _extract_error(event: Dict[str, Any]) -> Optional[str]:
+def _extract_error(event: dict[str, Any]) -> Optional[str]:
     # Top-level failure shape: {"type":"error","error":{"name":...,"data":{"message":...}}}.
     # The provider surfaces transport/rate-limit failures this way (stderr stays empty),
     # so missing it degrades to a bare "exited with code 1" with no actionable detail.
@@ -222,7 +222,7 @@ _PREVIEW_INPUT_KEYS = ("pattern", "filePath", "path", "command", "url", "query")
 _TERMINAL_TOOL_STATUSES = {"completed", "success", "failed", "error"}
 
 
-def _opencode_tool_preview(tool_name: str, state: Dict[str, Any]) -> Optional[str]:
+def _opencode_tool_preview(tool_name: str, state: dict[str, Any]) -> Optional[str]:
     """Short preview for the tool.started bubble; mirrors _codex_item_to_preview."""
     if not isinstance(state, dict):
         return None
@@ -242,7 +242,7 @@ def _opencode_tool_preview(tool_name: str, state: Dict[str, Any]) -> Optional[st
     return None
 
 
-def _opencode_tool_result(state: Dict[str, Any]) -> tuple[str, bool]:
+def _opencode_tool_result(state: dict[str, Any]) -> tuple[str, bool]:
     """(result_text, is_error) for a completed tool part — display-facing, capped."""
     if not isinstance(state, dict):
         return "", False
@@ -259,7 +259,7 @@ def _opencode_tool_result(state: Dict[str, Any]) -> tuple[str, bool]:
     return text[:4000], is_error
 
 
-def _append_opencode_reasoning_block(reasoning_parts: List[str], text: str) -> str:
+def _append_opencode_reasoning_block(reasoning_parts: list[str], text: str) -> str:
     """Add one completed OpenCode thinking block to the accumulated reasoning.
 
     OpenCode emits each reasoning event only after its thinking block finishes, so
@@ -277,7 +277,7 @@ def _append_opencode_reasoning_block(reasoning_parts: List[str], text: str) -> s
     return block
 
 
-def _bridge_opencode_tool(agent, part: Dict[str, Any], started: Dict[str, Any],
+def _bridge_opencode_tool(agent, part: dict[str, Any], started: dict[str, Any],
                           finished: set[str]) -> int:
     """Project one ``tool_use`` part into the display callbacks (codex-bridge shapes).
 
@@ -328,8 +328,8 @@ def _bridge_opencode_tool(agent, part: Dict[str, Any], started: Dict[str, Any],
 
 
 def run_opencode_cli_turn(agent, *, user_message: str, original_user_message: Any,
-                          messages: List[Dict[str, Any]], effective_task_id: str,
-                          should_review_memory: bool = False) -> Dict[str, Any]:
+                          messages: list[dict[str, Any]], effective_task_id: str,
+                          should_review_memory: bool = False) -> dict[str, Any]:
     """Hand the turn to a local ``opencode run`` subprocess; bridge its NDJSON events into
     Hermes streaming/accounting. Returns the chat_completions result shape. The user
     message is ALREADY in ``messages`` — never append it again."""
@@ -348,12 +348,12 @@ def run_opencode_cli_turn(agent, *, user_message: str, original_user_message: An
 
     timeout_seconds = int(getattr(agent, "opencode_task_timeout", 0) or 1800)
     proc = None
-    final_text_parts: List[str] = []
-    reasoning_parts: List[str] = []
-    tool_started: Dict[str, Any] = {}
+    final_text_parts: list[str] = []
+    reasoning_parts: list[str] = []
+    tool_started: dict[str, Any] = {}
     tool_finished: set[str] = set()
     tool_completed = 0
-    usage_last: Optional[Dict[str, int]] = None
+    usage_last: Optional[dict[str, int]] = None
     error: Optional[str] = None
     interrupted = False
     watchdog_expired = False
@@ -431,6 +431,13 @@ def run_opencode_cli_turn(agent, *, user_message: str, original_user_message: An
                 if isinstance(part, dict):
                     text = part.get("text")
                     if isinstance(text, str):
+                        if reasoning_parts:
+                            # A previous thinking block is already streaming:
+                            # close its display part first, or the consumer
+                            # coalesces consecutive blocks into one card and
+                            # the settled transcript keeps a single blob.
+                            _call_guarded(getattr(agent, "_fire_reasoning_block_end", None),
+                                          "_fire_reasoning_block_end raised")
                         block = _append_opencode_reasoning_block(reasoning_parts, text)
                         if block:
                             _call_guarded(getattr(agent, "_fire_reasoning_delta", None),
@@ -477,7 +484,7 @@ def run_opencode_cli_turn(agent, *, user_message: str, original_user_message: An
     # Assemble the assistant message and persist (agent_persisted=True skips the gateway rewrite).
     # Reasoning rides the canonical assistant_msg["reasoning"] store, rendered wherever the
     # surfaces show thinking; tool activity was already streamed live and stays out of history.
-    assistant_message: Dict[str, Any] = {"role": "assistant", "content": final_text or ""}
+    assistant_message: dict[str, Any] = {"role": "assistant", "content": final_text or ""}
     reasoning_text = "".join(reasoning_parts).strip()
     if reasoning_text:
         assistant_message["reasoning"] = reasoning_text

@@ -6,6 +6,7 @@ export {
   assistantTextPart,
   chatMessageText,
   collectUnspokenTurnSpeech,
+  completeOpenReasoningPart,
   completeOpenTimelineParts,
   dedupeRepeatedTextInParts,
   finalizeInterruptedMessages,

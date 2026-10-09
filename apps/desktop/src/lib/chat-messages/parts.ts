@@ -617,6 +617,28 @@ export function appendReasoningPart(parts: ChatMessagePart[], delta: string, tim
   return appendStreamPart(parts, 'reasoning', delta, timestamp).parts
 }
 
+/**
+ * Seal the open reasoning tail so the next delta starts a new card.
+ * Providers that emit thinking block-by-block (opencode) signal each
+ * completed block; without this the adjacent-channel coalescing in
+ * `appendStreamPart` glues consecutive blocks into one part and the
+ * settled transcript keeps a single blob. Idempotent: a completed tail,
+ * a non-reasoning tail, or an empty list is returned untouched.
+ */
+export function completeOpenReasoningPart(parts: ChatMessagePart[], timestamp?: number): ChatMessagePart[] {
+  const tailIndex = parts.length - 1
+  const tail = parts[tailIndex]
+
+  if (tail?.type !== 'reasoning' || tail.completedAt !== undefined) {
+    return parts
+  }
+
+  const next = [...parts]
+  next[tailIndex] = { ...tail, completedAt: timestamp }
+
+  return next
+}
+
 export function appendAssistantTextPart(
   parts: ChatMessagePart[],
   delta: string,

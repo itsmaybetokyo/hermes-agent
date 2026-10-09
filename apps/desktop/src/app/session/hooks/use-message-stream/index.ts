@@ -10,6 +10,7 @@ import {
   type ChatMessage,
   type ChatMessagePart,
   chatMessageText,
+  completeOpenReasoningPart,
   completeOpenTimelineParts,
   type GatewayEventPayload,
   mergeFinalAssistantText,
@@ -510,6 +511,30 @@ export function useMessageStream({
       queueDelta(sessionId, 'assistant', delta, occurredAt)
     },
     [queueDelta]
+  )
+  // Seal the open reasoning tail so the next delta starts a new card.
+  // Block-by-block providers (opencode) mark each completed thinking block;
+  // without this the adjacent-channel coalescing glues consecutive blocks
+  // into one part. Never seeds a bubble: a boundary with no live stream
+  // (stale replay past settle) is a no-op.
+  const completeReasoningPart = useCallback(
+    (sessionId: string, occurredAt = Date.now() / 1000) => {
+      const live = sessionStateByRuntimeIdRef.current.get(sessionId)
+      const streamId = live?.streamId
+
+      if (!streamId || !live?.messages.some(m => m.id === streamId)) {
+        return
+      }
+
+      mutateStream(
+        sessionId,
+        parts => completeOpenReasoningPart(parts, occurredAt),
+        () => [],
+        {},
+        occurredAt
+      )
+    },
+    [mutateStream, sessionStateByRuntimeIdRef]
   )
 
   const appendReasoningDelta = useCallback(
@@ -1216,6 +1241,7 @@ export function useMessageStream({
     lastCwdInfoSessionRef,
     nativeSubagentSessionsRef,
     completeAssistantMessage,
+    completeReasoningPart,
     failAssistantMessage,
     flushQueuedDeltas,
     dropQueuedDeltas,

@@ -20,6 +20,7 @@ function context(type: GatewayEventName): GatewayEventContext {
       appendReasoningDelta: vi.fn(),
       compactedTurnRef: { current: new Set() },
       completeAssistantMessage: vi.fn(),
+      completeReasoningPart: vi.fn(),
       failAssistantMessage: vi.fn(),
       finalizeInterimAssistantMessage: vi.fn(),
       flushQueuedDeltas: vi.fn(),
@@ -54,5 +55,29 @@ describe('handleMessageStreamEvent session-control integration', () => {
     expect(handleMessageStreamEvent(context('message.complete'))).toBe(true)
     expect(refreshSupportedSessionControlAfterTurn).toHaveBeenCalledTimes(1)
     expect(refreshSupportedSessionControlAfterTurn).toHaveBeenCalledWith('s1')
+  })
+})
+
+describe('handleMessageStreamEvent reasoning block boundary', () => {
+  function reasoningContext(blockEnd: boolean): GatewayEventContext {
+    const ctx = context('reasoning.delta')
+    ctx.payload = { text: blockEnd ? '' : 'thinking', block_end: blockEnd || undefined }
+
+    return ctx
+  }
+
+  it('seals the open part before a block-by-block delta, flushing first', () => {
+    const ctx = reasoningContext(true)
+    expect(handleMessageStreamEvent(ctx)).toBe(true)
+    expect(ctx.deps.flushQueuedDeltas).toHaveBeenCalledWith('s1')
+    expect(ctx.deps.completeReasoningPart).toHaveBeenCalledWith('s1', 1_700_000_100)
+  })
+
+  it('leaves ordinary token deltas on the coalescing path', () => {
+    const ctx = reasoningContext(false)
+    expect(handleMessageStreamEvent(ctx)).toBe(true)
+    expect(ctx.deps.flushQueuedDeltas).not.toHaveBeenCalled()
+    expect(ctx.deps.completeReasoningPart).not.toHaveBeenCalled()
+    expect(ctx.deps.appendReasoningDelta).toHaveBeenCalledWith('s1', 'thinking', false, 1_700_000_100)
   })
 })

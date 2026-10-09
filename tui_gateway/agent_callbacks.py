@@ -138,6 +138,16 @@ def _emit_reasoning_delta(sid: str, text: str) -> None:
     _emit("reasoning.delta", sid, {"text": text, **({"verbose": True} if _session_verbose(sid) else {})})
 
 
+def _emit_reasoning_block_end(sid: str) -> None:
+    # Zero-text boundary marker: completes the open reasoning part so the next
+    # delta starts a new card. Gated like deltas — with reasoning hidden no
+    # parts are built, so there is nothing to complete.
+    if not _session_show_reasoning(sid):
+        return
+    _emit("reasoning.delta", sid, {"text": "", "block_end": True,
+                                   **({"verbose": True} if _session_verbose(sid) else {})})
+
+
 def _setup_choose_request(sid: str, payload: dict) -> dict | None:
     from tui_gateway import server_requests
     return server_requests.send("setup_choose", sid, dict(payload), timeout=_clarify_timeout_seconds())
@@ -163,6 +173,7 @@ def _agent_cbs(sid: str) -> dict:
         # Affection reaction (ily / <3 / good bot) → hearts; core-detected so TUI/desktop share it.
         "reaction_callback": lambda kind: _emit("reaction", sid, {"kind": kind}),
         "reasoning_callback": lambda text: _emit_reasoning_delta(sid, text),
+        "reasoning_block_end_callback": lambda: _emit_reasoning_block_end(sid),
         "status_callback": lambda kind, text=None: _agent_status_update(sid, kind, text),
         # Credits/notice spine: AgentNotice → notification.show; recovery → notification.clear.
         "notice_callback": lambda n: _agent_notice_update(sid, n),

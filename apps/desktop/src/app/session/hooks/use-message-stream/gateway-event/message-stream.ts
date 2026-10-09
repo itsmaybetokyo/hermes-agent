@@ -143,6 +143,7 @@ export function handleMessageStreamEvent(ctx: GatewayEventContext): boolean {
     appendReasoningDelta,
     compactedTurnRef,
     completeAssistantMessage,
+    completeReasoningPart,
     finalizeInterimAssistantMessage,
     flushQueuedDeltas,
     dropQueuedDeltas,
@@ -284,6 +285,15 @@ export function handleMessageStreamEvent(ctx: GatewayEventContext): boolean {
 
   if (event.type === 'reasoning.delta') {
     if (sessionId) {
+      if (payload?.block_end) {
+        // Block-by-block provider (opencode) finished one thinking block:
+        // flush first (a queued delta of the old block must not land in the
+        // new card), seal the open reasoning part, then the empty marker
+        // below is a no-op and the next real delta starts a fresh part.
+        flushQueuedDeltas(sessionId)
+        completeReasoningPart(sessionId, occurredAt)
+      }
+
       appendReasoningDelta(sessionId, coerceThinkingText(payload?.text), false, occurredAt)
     }
 

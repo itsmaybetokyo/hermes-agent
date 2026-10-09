@@ -15,6 +15,7 @@ export interface GatewayEventDeps {
   nativeSubagentSessionsRef: MutableRefObject<Set<string>>
   appendAssistantDelta: (sessionId: string, delta: string, occurredAt?: number) => void
   appendReasoningDelta: (sessionId: string, delta: string, replace?: boolean, occurredAt?: number) => void
+  completeReasoningPart: (sessionId: string, occurredAt?: number) => void
   completeAssistantMessage: (
     sessionId: string,
     text: string,

@@ -361,6 +361,21 @@ class StreamDeliveryMixin:
         if enabled:
             self._enqueue_stream_hook("on_stream_delta", label="reasoning on_stream_delta", delta=text, kind="reasoning")
 
+    def _fire_reasoning_block_end(self) -> None:
+        """Close the current reasoning block for display surfaces.
+
+        Providers that emit thinking block-by-block (opencode) call this before
+        starting the next block. Consumers that coalesce adjacent same-channel
+        deltas into one part (desktop ``appendStreamPart``) would otherwise glue
+        consecutive blocks into a single card; completing the open part keeps
+        one card per block, which is also what the post-turn refresh retains.
+        Absent ``reasoning_block_end_callback`` (CLI, TUI, tests) is a no-op.
+        """
+        if self._stream_writer_superseded():
+            self._note_dropped_stream_writer("_fire_reasoning_block_end")
+            return
+        self._call_quietly(getattr(self, "reasoning_block_end_callback", None))
+
     def _fire_tool_gen_started(self, tool_name: str) -> None:
         """Notify the display layer that the model is generating tool call arguments (spinner for large payloads)."""
         self._call_quietly(self.tool_gen_callback, tool_name)

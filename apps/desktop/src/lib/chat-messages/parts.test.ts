@@ -2,7 +2,14 @@
 // a card for the text before the first space and left the rest as prose.
 import { describe, expect, it } from 'vitest'
 
-import { appendAssistantTextPart, chatMessageText, mediaTagValues, renderMediaTags } from './parts'
+import {
+  appendAssistantTextPart,
+  chatMessageText,
+  completeOpenReasoningPart,
+  mediaTagValues,
+  renderMediaTags
+} from './parts'
+import type { ChatMessagePart } from './types'
 
 const SPACED = '/home/hermes/Morten - Nobly Kickoff - Opening and cue cards EN.docx'
 const CARD = `[File: Morten - Nobly Kickoff - Opening and cue cards EN.docx](#media:${encodeURIComponent(SPACED)})`

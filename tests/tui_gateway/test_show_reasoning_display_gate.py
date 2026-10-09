@@ -62,6 +62,25 @@ def test_shown_reasoning_still_emits_reasoning_delta(monkeypatch):
     assert events[0][2]["text"] == "visible thought"
 
 
+def test_shown_reasoning_emits_block_end_boundary(monkeypatch):
+    events = _capture(monkeypatch)
+    _session(monkeypatch, "show-blocks", show_reasoning=True, effort="high")
+
+    server._agent_cbs("show-blocks")["reasoning_block_end_callback"]()
+
+    assert [event[0] for event in events] == ["reasoning.delta"]
+    assert events[0][2] == {"text": "", "block_end": True}
+
+
+def test_hidden_reasoning_drops_block_end_marker(monkeypatch):
+    events = _capture(monkeypatch)
+    _session(monkeypatch, "hide-blocks", show_reasoning=False, effort="high")
+
+    server._agent_cbs("hide-blocks")["reasoning_block_end_callback"]()
+
+    assert events == []
+
+
 def test_child_mirror_skips_reasoning_delta_when_hidden(monkeypatch):
     events = _capture(monkeypatch)
     _session(monkeypatch, "child-sid", show_reasoning=False)

@@ -131,6 +131,10 @@ export type GatewayEventPayload = {
   // clarify.request
   request_id?: string
   question?: string
+  // reasoning.delta — a completed thinking block ended (opencode emits
+  // thinking block-by-block). Consumers complete the open reasoning part
+  // first so the next delta starts a new card. Absent on older gateways.
+  block_end?: boolean
   // btw.complete / background.complete — id of the side/background task
   task_id?: string
   questions?: unknown
