@@ -81,6 +81,17 @@ def test_hidden_reasoning_drops_block_end_marker(monkeypatch):
     assert events == []
 
 
+def test_gateway_callbacks_are_agent_init_kwargs():
+    # server.py spreads _agent_cbs(sid) into AIAgent(...): a key the
+    # constructor rejects breaks every reply (TypeError on turn start).
+    import inspect
+
+    from run_agent import AIAgent
+
+    params = set(inspect.signature(AIAgent.__init__).parameters)
+    assert [key for key in server._agent_cbs("any-sid") if key not in params] == []
+
+
 def test_child_mirror_skips_reasoning_delta_when_hidden(monkeypatch):
     events = _capture(monkeypatch)
     _session(monkeypatch, "child-sid", show_reasoning=False)
