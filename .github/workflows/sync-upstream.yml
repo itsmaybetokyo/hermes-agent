@@ -66,6 +66,11 @@ jobs:
                 git commit --amend --no-edit -q
               fi
               git push origin main
+              landed_count=$(git rev-list --count "$before".."$after")
+              echo "### Upstream sync landed" >> "$GITHUB_STEP_SUMMARY"
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+              echo "$landed_count upstream commit(s) merged into main at $upstream_sha." \
+                  >> "$GITHUB_STEP_SUMMARY"
               echo "landed=true" >> "$GITHUB_OUTPUT"
             else
               echo "landed=false" >> "$GITHUB_OUTPUT"
@@ -153,9 +158,21 @@ jobs:
           # tag's pyproject version). Without this mirror every sync re-creates the
           # "unknown" version that a tagless clone reports.
           #
-          # Non-fatal and unforced: the merge above has already landed, a rejected tag
-          # must not make it look failed, and plain --tags never overwrites or deletes
-          # a tag the fork already has. The next scheduled run retries.
-          if ! git push origin --tags; then
-            echo "::warning::release tag mirror incomplete; next scheduled run retries"
+          # Only release tags (v*), one at a time: upstream also carries internal backup
+          # tags, and a single `--tags` push fails as a whole when any tagged commit
+          # touches .github/workflows (GITHUB_TOKEN has no `workflows` scope, and the
+          # scope is not grantable via `permissions:`). Per-tag keeps the release tags
+          # landing instead of losing the batch to an unrelated tag.
+          mirrored=0
+          failed=0
+          for tag in $(git tag -l 'v*'); do
+            if git push origin "refs/tags/$tag" 2>/dev/null; then
+              mirrored=$((mirrored + 1))
+            else
+              failed=$((failed + 1))
+            fi
+          done
+          echo "mirrored=$mirrored failed=$failed" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+          if [ "$failed" -gt 0 ]; then
+            echo "::warning::$failed release tag(s) not mirrored; next scheduled run retries"
           fi
