@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 concurrency:
   group: sync-upstream
@@ -145,6 +146,34 @@ jobs:
             echo "main was **not** updated. $count file(s) conflict against $upstream_slug main." \
                 >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Keep only the fork's own workflows enabled
+        # A merge lands upstream's workflow files and GitHub registers any workflow it
+        # has not seen as active, so the next push runs upstream's full CI matrix
+        # (desktop bundles, e2e, nix, docker, installers). GitHub meters Actions usage
+        # per fork and disables every workflow once a fork crosses that allowance —
+        # which is what happened here: the fork went from 6-hourly syncs to zero runs
+        # on 2026-10-08, and re-enabling is a manual repository-maintainer action. So
+        # the allowlist is re-asserted after every merge, including workflows upstream
+        # just added. Add a name to KEEP to run it on the fork.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: sync-upstream.yml
+        run: |
+          set -euo pipefail
+          for wf in $(gh api "repos/$GITHUB_REPOSITORY/actions/workflows?per_page=100" \
+                       --jq '.workflows[] | select(.state == "active") | "\(.id):\(.path)"'); do
+            id="${wf%%:*}"
+            path="${wf#*:}"
+            if [ "$(basename "$path")" = "$KEEP" ]; then
+              continue
+            fi
+            if gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/$id/disable" >/dev/null; then
+              echo "disabled $path"
+            else
+              echo "::warning::could not disable $path"
+            fi
+          done
 
       - name: Mirror upstream release tags
         # Only meaningful when main actually moved: hermes_cli/version_info.py reads the
